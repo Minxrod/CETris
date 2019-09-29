@@ -1041,6 +1041,7 @@ drawScore:
  call draw24BitNumber
  
  ld hl,(level)
+ inc hl ;no level zero, please
  ld b, 2
  ld d, 160
  ld e, 32
