@@ -69,10 +69,17 @@ update:
 skipLockCheck:
  ld a,(kbdG7)
  bit kbitDown,a
- jr nz, drop
+ jr nz, userdrop
  call checkLines
  ret
- 
+
+userDrop:
+ ld a,(lockTimer)
+ cp -1
+ jr nz, drop
+ ld hl,(score)
+ inc hl
+ ld (score),hl
 drop:
  ld hl,0
  ld (timerT),hl
@@ -141,13 +148,27 @@ noIncrementE:
  ld a,(hl) ;score to add for lines cleared
  ld de,0
  ld e,a
- ld hl,(score)
- add hl,de ;score+=a
+ ld hl,0
+ add hl,de ;1
+ add hl,hl ;2
+ add hl,hl ;4
+ add hl,de ;5
+ add hl,hl ;10
+ push hl
+ pop de
+ add hl,hl ;20
+ add hl,hl ;40
+ add hl,de ;50
+ add hl,hl ;100*score
+ 
+ ld de,(score)
+ add hl,de ;score+=100a
  ld (score),hl
  ret
  
 clearLine:
  ;hl=end of cleared line
+ push hl
  ld bc,field
  ld de,10
  or a ;clear carry
@@ -173,6 +194,7 @@ clearLine:
  ld a,(linesClear)
  inc a
  ld (linesClear),a
+ pop hl
  ret
  
 newBlock:
@@ -180,6 +202,7 @@ newBlock:
  ld (curX),a
  ld a,0
  ld (curY),a
+ ld (curR),a
  call random
  ld (curT),a
  ld ix,blockData
@@ -276,13 +299,45 @@ checkBlocksInLeft:
 blockTooFarLeft:
  ret
 
+squareKickLeft:
+ ld hl, kicksO
+ ret ;still not worth it 
+lineKickLeft:
+ ld hl, kicksI
+ jr sharedKickLeft
+ 
 checkRotationLeft:
- ld a, (curX)
- ld (rX), a ;save to special location
- ld a, (curY)
- ld (rY), a 
+ ld a,(curT)
+ cp 3
+ jr z, squareKickLeft
+ cp 0
+ jr z, lineKickLeft
+ 
+ ld hl, kicksNormal
+sharedKickLeft:
+ push hl ;save table address
+ 
+ ld a,(curR)
+ cp a,0
+ jr nz,skipAdjust4
+ ld a,4
+skipAdjust4:
+ ld (curR),a
+
+ call getTableOffset ;de=offset
+ pop hl ;restore table address
+ add hl,de ;offset + table = starting rotation kick
+ 
+ ld de,-10
+ call calculateRXY ;hl is up two now, rxy stored
+ push hl ;at next offset already
+ 
+ ld a,0
+ ld (rAttempt),a ;there are currently 0 rotation attempts.
+ 
  ld hl, curBlock
  ld b,4
+ 
 checkBlocksRotateLeft:
  ;get y
  ld a,(hl)
@@ -316,7 +371,6 @@ checkBlocksRotateLeft:
  ld hl, curBlock
 rotateBlocksLeft:
  push bc
- push hl
  ld a,(hl)
  ld e,a
  inc hl
@@ -327,14 +381,48 @@ rotateBlocksLeft:
  ld (hl),d
  inc hl
  ld (hl),e ;blocks have rotated: now do the next one
- pop hl
- inc hl
  inc hl
  pop bc
  djnz rotateBlocksLeft
  ld a, -1
  ld (lockTimer),a
+ 
+ ld a,(curR)
+ dec a
+ and $03
+ cp 0
+ jr nz, skipOff4
+ ld a,4
+skipOff4:
+ ld (curR),a
+ pop hl
+ 
+ ld a,(rX)
+ ld (curX),a
+ ld a,(ry) ;save the location of the successful turn.
+ ld (curY),a
+ ret
 noRotationLeft:
+ pop hl ;get offset
+ 
+ ld de,-10
+ call calculateRXY ;rxy stored - hl is already at next ofs
+ push hl ;at next offset already
+ 
+ ld hl, curBlock
+ ld b,4
+ 
+ ld a,(curT)
+ cp 3
+ jp z, doneLeft
+ 
+ ld a,(rAttempt)
+ inc a
+ ld (rAttempt),a
+ cp 5
+ jp nz, checkBlocksRotateLeft
+doneLeft:
+ pop hl ;unneeded.
  ret
  
 rotationTempHL:
@@ -343,12 +431,73 @@ rX:
  .db 0
 rY:
  .db 0
+rAttempt:
+ .db 0
+
+;multiplys curR by 10 and stores to de
+getTableOffset:
+ ld a,(curR)
+ ld de,0
+ ld hl,0
+ ld e,a
+ ld l,a
+ add hl,hl
+ add hl,hl
+ add hl,de
+ add hl,hl ;10*rotation -> hl is offset in table at saved (hl)
+ push hl
+ pop de
+ ret 
+ 
+;requires HL to be table ptr
+;updates HL by two
+calculateRXY:
+ ld a, (curX)
+ add a, (hl) ;add x offset
+ add hl,de
+ sub (hl) ;subtract next offset
+ or a
+ sbc hl,de ;undo the addition to next offset (back to start)
+ ld (rX), a ;save to special location
+ inc hl ;now on Y value
+ ld a, (curY)
+ add a, (hl) ;add y offset
+ add hl,de ;get next offset
+ sub (hl)
+ or a
+ sbc hl,de ;undo again
+ ld (rY), a
+ inc hl ;hl is 2 past previous offset ->
+ ret
+ 
+squareKickRight:
+ ld hl, kicksO
+ ret ;too not worth it
+lineKickRight:
+ ld hl, kicksI
+ jr sharedKickRight
  
 checkRotationRight:
- ld a, (curX)
- ld (rX), a ;save to special location
- ld a, (curY)
- ld (rY), a 
+ ld a,(curT)
+ cp 3
+ jr z, squareKickRight
+ cp 0
+ jr z, lineKickRight
+ 
+ ld hl, kicksNormal
+sharedKickRight:
+ push hl ;save table address
+ call getTableOffset ;de=offset
+ pop hl ;restore table address
+ add hl,de ;offset + table = starting rotation kick
+ 
+ ld de,10
+ call calculateRXY ;hl is up two now, rxy stored
+ push hl ;at next offset already
+ 
+ ld a,0
+ ld (rAttempt),a ;there are currently 0 rotation attempts.
+ 
  ld hl, curBlock
  ld b,4
 checkBlocksRotateRight:
@@ -382,9 +531,9 @@ checkBlocksRotateRight:
 ;rotation is a go
  ld b,4
  ld hl, curBlock
+
 rotateBlocksRight:
  push bc
- push hl
  ld a,(hl)
  neg
  ld e,a
@@ -395,14 +544,45 @@ rotateBlocksRight:
  ld (hl),d
  inc hl
  ld (hl),e ;blocks have rotated: now do the next one
- pop hl
- inc hl
  inc hl
  pop bc
  djnz rotateBlocksRight
+ 
  ld a, -1
  ld (lockTimer),a
+ pop hl ;unneeded
+ 
+ ld a,(curR)
+ inc a
+ and $03
+ ld (curR),a
+ 
+ ld a,(rX)
+ ld (curX),a
+ ld a,(ry) ;save the location of the successful turn.
+ ld (curY),a
+ ret
 noRotationRight:
+ pop hl ;get offset
+ 
+ ld de,10
+ call calculateRXY ;new rxy stored - hl is already at next ofs
+ push hl ;at next offset already
+ 
+ ld hl, curBlock
+ ld b,4
+ 
+ ld a,(curT)
+ cp 3
+ jp z, doneRight
+ 
+ ld a,(rAttempt)
+ inc a
+ ld (rAttempt),a
+ cp 5
+ jp nz, checkBlocksRotateRight
+doneRight:
+ pop hl ;unneeded.
  ret
  
 checkMoveRight:
@@ -684,11 +864,57 @@ drawScore:
  call drawSprite
  
  ;calculate score and display it.
+ 
+ ld hl,(score)
+ ld b,8
+drawScoreLoop:
+ push bc
+ ld a,10
+ call _DivHLbyA ;apparently a is remainer here
+ push hl ;save score for later
+ 
+ ld de,numbers
+ ld hl,0
+ ld l,a
+ add hl,hl
+ add hl,hl
+ add hl,hl
+ add hl,hl
+ add hl,hl
+ add hl,hl
+ add hl,de ;sprite data is here
+ push hl
+ pop ix
+ ld l,8
+ ld a,b
+ add a,a
+ add a,a
+ add a,a ;8*a
+ ld de,160
+ add a,e
+ ld e,a ;160 + ~
+ ld bc, $0808
+ ld a,1
+ call drawSprite
+ pop hl
+ pop bc
+ djnz drawScoreLoop
  ret
 
+randsav:
+ .db 00
 random:
  ld a,r
  and $07
+ cp $07
+ ret nz
+ ld a,(randsav)
+ inc a
+ ld (randsav),a
+ cp $07
+ ret nz
+ ld a,0
+ ld (randsav),a
  ret 
  
 tSpriteID:
@@ -756,21 +982,24 @@ blockData:
 ;wall kicks and rotation data
 kicksNormal:
  .db  0, 0,  0, 0,  0, 0,  0, 0,  0, 0  
- .db  0, 0,  1, 0,  1,-1,  0, 2,  1, 2
+ .db  0, 0,  1, 0,  1, 1,  0,-2,  1,-2
  .db  0, 0,  0, 0,  0, 0,  0, 0,  0, 0
- .db  0, 0, -1, 0, -1,-1,  0, 2, -1, 2
+ .db  0, 0, -1, 0, -1, 1,  0,-2, -1,-2
+ .db  0, 0,  0, 0,  0, 0,  0, 0,  0, 0  ;cloned so underflow isn't an issue
  
 kicksI:
  .db  0, 0, -1, 0,  2, 0, -1, 0,  2, 0
- .db -1, 0,  0, 0,  0, 0,  0, 1,  0,-2
- .db -1, 1,  1, 1, -2, 1,  1, 0, -2, 0
- .db  0, 1,  0, 1,  0, 1,  0,-1,  0, 2
+ .db -1, 0,  0, 0,  0, 0,  0,-1,  0, 2
+ .db -1,-1,  1,-1, -2,-1,  1, 0, -2, 0
+ .db  0,-1,  0,-1,  0,-1,  0, 1,  0,-2
+ .db  0, 0, -1, 0,  2, 0, -1, 0,  2, 0
  
 kicksO:
  .db  0, 0
- .db  0,-1
- .db -1,-1
+ .db  0, 1
+ .db -1, 1
  .db -1, 0
+ .db  0, 0
  
 spriteData:
 .db 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2
@@ -798,84 +1027,84 @@ scoreSprite:
 
 numbers:
 .db 0, 0, 0, 0, 0, 0, 0, 0
-.db 0, 0, 1, 1, 1, 1, 0, 0
-.db 0, 1, 1, 0, 0, 1, 1, 0
-.db 0, 1, 1, 0, 0, 1, 1, 0
-.db 0, 1, 1, 0, 0, 1, 1, 0
-.db 0, 1, 1, 0, 0, 1, 1, 0
-.db 0, 0, 1, 1, 1, 1, 0, 0
+.db 0, 0, 2, 2, 2, 2, 0, 0
+.db 0, 2, 2, 0, 0, 2, 2, 0
+.db 0, 2, 2, 0, 0, 2, 2, 0
+.db 0, 2, 2, 0, 0, 2, 2, 0
+.db 0, 2, 2, 0, 0, 2, 2, 0
+.db 0, 0, 2, 2, 2, 2, 0, 0
 .db 0, 0, 0, 0, 0, 0, 0, 0
 .db 0, 0, 0, 0, 0, 0, 0, 0
-.db 0, 0, 0, 1, 1, 0, 0, 0
-.db 0, 1, 1, 1, 1, 0, 0, 0
-.db 0, 0, 0, 1, 1, 0, 0, 0
-.db 0, 0, 0, 1, 1, 0, 0, 0
-.db 0, 0, 0, 1, 1, 0, 0, 0
-.db 0, 1, 1, 1, 1, 1, 1, 0
+.db 0, 0, 0, 2, 2, 0, 0, 0
+.db 0, 2, 2, 2, 2, 0, 0, 0
+.db 0, 0, 0, 2, 2, 0, 0, 0
+.db 0, 0, 0, 2, 2, 0, 0, 0
+.db 0, 0, 0, 2, 2, 0, 0, 0
+.db 0, 2, 2, 2, 2, 2, 2, 0
 .db 0, 0, 0, 0, 0, 0, 0, 0
 .db 0, 0, 0, 0, 0, 0, 0, 0
-.db 0, 0, 1, 1, 1, 1, 0, 0
-.db 0, 1, 1, 0, 0, 1, 1, 0
-.db 0, 0, 0, 0, 1, 1, 0, 0
-.db 0, 0, 0, 1, 1, 0, 0, 0
-.db 0, 0, 1, 1, 0, 0, 0, 0
-.db 0, 1, 1, 1, 1, 1, 1, 0
+.db 0, 0, 2, 2, 2, 2, 0, 0
+.db 0, 2, 2, 0, 0, 2, 2, 0
+.db 0, 0, 0, 0, 2, 2, 0, 0
+.db 0, 0, 0, 2, 2, 0, 0, 0
+.db 0, 0, 2, 2, 0, 0, 0, 0
+.db 0, 2, 2, 2, 2, 2, 2, 0
 .db 0, 0, 0, 0, 0, 0, 0, 0
 .db 0, 0, 0, 0, 0, 0, 0, 0
-.db 0, 0, 1, 1, 1, 1, 0, 0
-.db 0, 1, 1, 0, 0, 1, 1, 0
-.db 0, 0, 0, 1, 1, 1, 0, 0
-.db 0, 0, 0, 0, 0, 1, 1, 0
-.db 0, 1, 1, 0, 0, 1, 1, 0
-.db 0, 0, 1, 1, 1, 1, 0, 0
+.db 0, 0, 2, 2, 2, 2, 0, 0
+.db 0, 2, 2, 0, 0, 2, 2, 0
+.db 0, 0, 0, 2, 2, 2, 0, 0
+.db 0, 0, 0, 0, 0, 2, 2, 0
+.db 0, 2, 2, 0, 0, 2, 2, 0
+.db 0, 0, 2, 2, 2, 2, 0, 0
 .db 0, 0, 0, 0, 0, 0, 0, 0
 .db 0, 0, 0, 0, 0, 0, 0, 0
-.db 0, 1, 1, 0, 0, 1, 1, 0
-.db 0, 1, 1, 0, 0, 1, 1, 0
-.db 0, 1, 1, 1, 1, 1, 1, 0
-.db 0, 0, 0, 0, 0, 1, 1, 0
-.db 0, 0, 0, 0, 0, 1, 1, 0
-.db 0, 0, 0, 0, 0, 1, 1, 0
+.db 0, 2, 2, 0, 0, 2, 2, 0
+.db 0, 2, 2, 0, 0, 2, 2, 0
+.db 0, 2, 2, 2, 2, 2, 2, 0
+.db 0, 0, 0, 0, 0, 2, 2, 0
+.db 0, 0, 0, 0, 0, 2, 2, 0
+.db 0, 0, 0, 0, 0, 2, 2, 0
 .db 0, 0, 0, 0, 0, 0, 0, 0
 .db 0, 0, 0, 0, 0, 0, 0, 0
-.db 0, 1, 1, 1, 1, 1, 1, 0
-.db 0, 1, 1, 0, 0, 0, 0, 0
-.db 0, 1, 1, 1, 1, 1, 0, 0
-.db 0, 0, 0, 0, 0, 1, 1, 0
-.db 0, 0, 0, 0, 0, 1, 1, 0
-.db 0, 1, 1, 1, 1, 1, 0, 0
+.db 0, 2, 2, 2, 2, 2, 2, 0
+.db 0, 2, 2, 0, 0, 0, 0, 0
+.db 0, 2, 2, 2, 2, 2, 0, 0
+.db 0, 0, 0, 0, 0, 2, 2, 0
+.db 0, 0, 0, 0, 0, 2, 2, 0
+.db 0, 2, 2, 2, 2, 2, 0, 0
 .db 0, 0, 0, 0, 0, 0, 0, 0
 .db 0, 0, 0, 0, 0, 0, 0, 0
-.db 0, 0, 1, 1, 1, 1, 0, 0
-.db 0, 1, 1, 0, 0, 0, 0, 0
-.db 0, 1, 1, 1, 1, 1, 0, 0
-.db 0, 1, 1, 0, 0, 1, 1, 0
-.db 0, 1, 1, 0, 0, 1, 1, 0
-.db 0, 0, 1, 1, 1, 1, 0, 0
+.db 0, 0, 2, 2, 2, 2, 0, 0
+.db 0, 2, 2, 0, 0, 0, 0, 0
+.db 0, 2, 2, 2, 2, 2, 0, 0
+.db 0, 2, 2, 0, 0, 2, 2, 0
+.db 0, 2, 2, 0, 0, 2, 2, 0
+.db 0, 0, 2, 2, 2, 2, 0, 0
 .db 0, 0, 0, 0, 0, 0, 0, 0
 .db 0, 0, 0, 0, 0, 0, 0, 0
-.db 0, 1, 1, 1, 1, 1, 1, 0
-.db 0, 0, 0, 0, 0, 1, 1, 0
-.db 0, 0, 0, 0, 0, 1, 1, 0
-.db 0, 0, 0, 0, 1, 1, 0, 0
-.db 0, 0, 0, 0, 1, 1, 0, 0
-.db 0, 0, 0, 0, 1, 1, 0, 0
+.db 0, 2, 2, 2, 2, 2, 2, 0
+.db 0, 0, 0, 0, 0, 2, 2, 0
+.db 0, 0, 0, 0, 0, 2, 2, 0
+.db 0, 0, 0, 0, 2, 2, 0, 0
+.db 0, 0, 0, 0, 2, 2, 0, 0
+.db 0, 0, 0, 0, 2, 2, 0, 0
 .db 0, 0, 0, 0, 0, 0, 0, 0
 .db 0, 0, 0, 0, 0, 0, 0, 0
-.db 0, 0, 1, 1, 1, 1, 0, 0
-.db 0, 1, 1, 0, 0, 1, 1, 0
-.db 0, 0, 1, 1, 1, 1, 0, 0
-.db 0, 1, 1, 1, 1, 1, 1, 0
-.db 0, 1, 1, 0, 0, 1, 1, 0
-.db 0, 0, 1, 1, 1, 1, 0, 0
+.db 0, 0, 2, 2, 2, 2, 0, 0
+.db 0, 2, 2, 0, 0, 2, 2, 0
+.db 0, 0, 2, 2, 2, 2, 0, 0
+.db 0, 2, 2, 2, 2, 2, 2, 0
+.db 0, 2, 2, 0, 0, 2, 2, 0
+.db 0, 0, 2, 2, 2, 2, 0, 0
 .db 0, 0, 0, 0, 0, 0, 0, 0
 .db 0, 0, 0, 0, 0, 0, 0, 0
-.db 0, 0, 1, 1, 1, 1, 0, 0
-.db 0, 1, 1, 0, 0, 1, 1, 0
-.db 0, 1, 1, 0, 0, 1, 1, 0
-.db 0, 0, 1, 1, 1, 1, 1, 0
-.db 0, 0, 0, 0, 0, 1, 1, 0
-.db 0, 0, 1, 1, 1, 1, 0, 0
+.db 0, 0, 2, 2, 2, 2, 0, 0
+.db 0, 2, 2, 0, 0, 2, 2, 0
+.db 0, 2, 2, 0, 0, 2, 2, 0
+.db 0, 0, 2, 2, 2, 2, 2, 0
+.db 0, 0, 0, 0, 0, 2, 2, 0
+.db 0, 0, 2, 2, 2, 2, 0, 0
 .db 0, 0, 0, 0, 0, 0, 0, 0
 
 paletteData:
