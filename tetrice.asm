@@ -20,6 +20,7 @@ lockTimer = PSS + 273
 curPAL = PSS + 274
 curBAG = PSS + 275
 curBlock = PSS + 276
+score = PSS + 300 ;to 302: max score is 16777216
 
 main:
  call initLCD
@@ -69,6 +70,7 @@ skipLockCheck:
  ld a,(kbdG7)
  bit kbitDown,a
  jr nz, drop
+ call checkLines
  ret
  
 drop:
@@ -103,6 +105,74 @@ lockAllBlocks:
  pop bc
  djnz lockAllBlocks
  call newBlock
+ ret
+ 
+checkLines:
+ ld a,0
+ ld (linesClear),a
+ ld b,20
+ ld hl, field
+ 
+checkAllLines:
+ push bc
+ ld e, 0
+ ld b,10
+checkOneLine:
+ push bc
+ ld a,0
+ cp (hl)
+ jr z,noIncrementE
+ inc e
+noIncrementE:
+ inc hl
+ pop bc
+ djnz checkOneLine
+ ld a,10
+ cp e
+ call z, clearLine
+ pop bc
+ djnz checkAllLines
+ 
+ ld a,(linesClear)
+ ld de,0
+ ld e,a
+ ld hl,pointsPerLine
+ add hl,de
+ ld a,(hl) ;score to add for lines cleared
+ ld de,0
+ ld e,a
+ ld hl,(score)
+ add hl,de ;score+=a
+ ld (score),hl
+ ret
+ 
+clearLine:
+ ;hl=end of cleared line
+ ld bc,field
+ ld de,10
+ or a ;clear carry
+ sbc hl,bc ;field + displacement - field
+ or a
+ sbc hl,de ;displacement - 10
+ push hl
+ pop bc
+ ld hl, field
+ add hl,bc
+ ex de,hl
+ ld hl, field + 10
+ add hl,bc
+ ex de,hl
+ lddr ;copy rows down 10
+ 
+ ld hl, field
+ ld de, field+1
+ ld bc,10
+ ld (hl),0
+ ldir ;clear top row
+ 
+ ld a,(linesClear)
+ inc a
+ ld (linesClear),a
  ret
  
 newBlock:
@@ -161,6 +231,8 @@ drawBlockFieldX:
  ld l,a
  ld a,(curT)
  call drawMino
+ 
+ call drawScore
  halt
  ret
  
@@ -205,25 +277,38 @@ blockTooFarLeft:
  ret
 
 checkRotationLeft:
+ ld a, (curX)
+ ld (rX), a ;save to special location
+ ld a, (curY)
+ ld (rY), a 
  ld hl, curBlock
  ld b,4
 checkBlocksRotateLeft:
- push bc
- push hl
+ ;get y
  ld a,(hl)
  ld e,a
+ ld a,(rY)
+ add a,e
+ cp 20
+ jr nc, noRotationLeft
+ ld e,a
  inc hl
+ ;get x
  ld a,(hl)
  neg
  ld d,a
+ ld a,(rX)
+ add a,d
+ cp 10
+ jr nc, noRotationLeft
+ ld d,a
+ ld (rotationTempHL),hl
  push de
  pop hl
  call checkBlock
  cp 0
- pop hl
- pop bc
  jp nz,noRotationLeft
- inc hl
+ ld hl,(rotationTempHL)
  inc hl
  djnz checkBlocksRotateLeft
 ;rotation is a go
@@ -252,26 +337,46 @@ rotateBlocksLeft:
 noRotationLeft:
  ret
  
+rotationTempHL:
+ .db 0,0,0 ;3 bytes for HL
+rX:
+ .db 0
+rY:
+ .db 0
+ 
 checkRotationRight:
+ ld a, (curX)
+ ld (rX), a ;save to special location
+ ld a, (curY)
+ ld (rY), a 
  ld hl, curBlock
  ld b,4
 checkBlocksRotateRight:
- push bc
- push hl
+ ;get y
  ld a,(hl)
  neg
  ld e,a
+ ld a,(rY)
+ add a,e
+ cp 20
+ jr nc, noRotationRight ;out of bounds
+ ld e,a
+ ;get x
  inc hl
  ld a,(hl)
  ld d,a
+ ld a,(rX)
+ add a,d
+ cp 10
+ jr nc, noRotationRight ;also out of bounds
+ ld d,a
+ ld (rotationTempHL),hl
  push de
  pop hl
  call checkBlock
  cp 0
- pop hl
- pop bc
  jp nz,noRotationRight
- inc hl
+ ld hl,(rotationTempHL)
  inc hl
  djnz checkBlocksRotateRight
 ;rotation is a go
@@ -568,6 +673,19 @@ drawOneBlock:
  call drawSprite
  pop hl ;restore old coordinates
  ret
+ 
+drawScore:
+ ld a,0
+ ld b,8
+ ld c,37
+ ld de, 160
+ ld l,0
+ ld ix,scoreSprite
+ call drawSprite
+ 
+ ;calculate score and display it.
+ ret
+
 random:
  ld a,r
  and $07
@@ -577,6 +695,15 @@ tSpriteID:
  .db 0
 tSpritePAL:
  .db 0
+ 
+linesClear:
+ .db 0
+pointsPerLine:
+ .db 0,1,3,5,8
+pointsPerMini:
+ .db 1,2,4 
+pointsPerTLine:
+ .db 4,8,12,16,24
  
 ;format: x ofs, y ofs, spriteID, palette
 spriteID = 8
@@ -625,6 +752,25 @@ blockData:
  .db  0, 0
  .db  1, 0
  .db  0, 28
+
+;wall kicks and rotation data
+kicksNormal:
+ .db  0, 0,  0, 0,  0, 0,  0, 0,  0, 0  
+ .db  0, 0,  1, 0,  1,-1,  0, 2,  1, 2
+ .db  0, 0,  0, 0,  0, 0,  0, 0,  0, 0
+ .db  0, 0, -1, 0, -1,-1,  0, 2, -1, 2
+ 
+kicksI:
+ .db  0, 0, -1, 0,  2, 0, -1, 0,  2, 0
+ .db -1, 0,  0, 0,  0, 0,  0, 1,  0,-2
+ .db -1, 1,  1, 1, -2, 1,  1, 0, -2, 0
+ .db  0, 1,  0, 1,  0, 1,  0,-1,  0, 2
+ 
+kicksO:
+ .db  0, 0
+ .db  0,-1
+ .db -1,-1
+ .db -1, 0
  
 spriteData:
 .db 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2
@@ -639,6 +785,98 @@ spriteData:
 .db 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3
 .db 1, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3
 .db 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3
+
+scoreSprite:
+.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 0, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 0, 0, 0, 3, 3, 3, 0, 0, 0, 0, 3, 3, 3, 3, 0, 0, 0, 3, 3, 3, 0, 0, 0, 3
+.db 0, 0, 3, 3, 3, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 3, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0
+.db 0, 0, 0, 0, 0, 3, 0, 0, 3, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 3, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 3, 0, 0, 0
+.db 0, 0, 0, 0, 0, 3, 0, 0, 3, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 3, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0
+.db 0, 3, 3, 3, 3, 0, 0, 0, 0, 3, 3, 3, 3, 0, 0, 0, 3, 3, 3, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 0, 0, 3
+
+numbers:
+.db 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 0, 1, 1, 1, 1, 0, 0
+.db 0, 1, 1, 0, 0, 1, 1, 0
+.db 0, 1, 1, 0, 0, 1, 1, 0
+.db 0, 1, 1, 0, 0, 1, 1, 0
+.db 0, 1, 1, 0, 0, 1, 1, 0
+.db 0, 0, 1, 1, 1, 1, 0, 0
+.db 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 0, 0, 1, 1, 0, 0, 0
+.db 0, 1, 1, 1, 1, 0, 0, 0
+.db 0, 0, 0, 1, 1, 0, 0, 0
+.db 0, 0, 0, 1, 1, 0, 0, 0
+.db 0, 0, 0, 1, 1, 0, 0, 0
+.db 0, 1, 1, 1, 1, 1, 1, 0
+.db 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 0, 1, 1, 1, 1, 0, 0
+.db 0, 1, 1, 0, 0, 1, 1, 0
+.db 0, 0, 0, 0, 1, 1, 0, 0
+.db 0, 0, 0, 1, 1, 0, 0, 0
+.db 0, 0, 1, 1, 0, 0, 0, 0
+.db 0, 1, 1, 1, 1, 1, 1, 0
+.db 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 0, 1, 1, 1, 1, 0, 0
+.db 0, 1, 1, 0, 0, 1, 1, 0
+.db 0, 0, 0, 1, 1, 1, 0, 0
+.db 0, 0, 0, 0, 0, 1, 1, 0
+.db 0, 1, 1, 0, 0, 1, 1, 0
+.db 0, 0, 1, 1, 1, 1, 0, 0
+.db 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 1, 1, 0, 0, 1, 1, 0
+.db 0, 1, 1, 0, 0, 1, 1, 0
+.db 0, 1, 1, 1, 1, 1, 1, 0
+.db 0, 0, 0, 0, 0, 1, 1, 0
+.db 0, 0, 0, 0, 0, 1, 1, 0
+.db 0, 0, 0, 0, 0, 1, 1, 0
+.db 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 1, 1, 1, 1, 1, 1, 0
+.db 0, 1, 1, 0, 0, 0, 0, 0
+.db 0, 1, 1, 1, 1, 1, 0, 0
+.db 0, 0, 0, 0, 0, 1, 1, 0
+.db 0, 0, 0, 0, 0, 1, 1, 0
+.db 0, 1, 1, 1, 1, 1, 0, 0
+.db 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 0, 1, 1, 1, 1, 0, 0
+.db 0, 1, 1, 0, 0, 0, 0, 0
+.db 0, 1, 1, 1, 1, 1, 0, 0
+.db 0, 1, 1, 0, 0, 1, 1, 0
+.db 0, 1, 1, 0, 0, 1, 1, 0
+.db 0, 0, 1, 1, 1, 1, 0, 0
+.db 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 1, 1, 1, 1, 1, 1, 0
+.db 0, 0, 0, 0, 0, 1, 1, 0
+.db 0, 0, 0, 0, 0, 1, 1, 0
+.db 0, 0, 0, 0, 1, 1, 0, 0
+.db 0, 0, 0, 0, 1, 1, 0, 0
+.db 0, 0, 0, 0, 1, 1, 0, 0
+.db 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 0, 1, 1, 1, 1, 0, 0
+.db 0, 1, 1, 0, 0, 1, 1, 0
+.db 0, 0, 1, 1, 1, 1, 0, 0
+.db 0, 1, 1, 1, 1, 1, 1, 0
+.db 0, 1, 1, 0, 0, 1, 1, 0
+.db 0, 0, 1, 1, 1, 1, 0, 0
+.db 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 0, 0, 0, 0, 0, 0, 0
+.db 0, 0, 1, 1, 1, 1, 0, 0
+.db 0, 1, 1, 0, 0, 1, 1, 0
+.db 0, 1, 1, 0, 0, 1, 1, 0
+.db 0, 0, 1, 1, 1, 1, 1, 0
+.db 0, 0, 0, 0, 0, 1, 1, 0
+.db 0, 0, 1, 1, 1, 1, 0, 0
+.db 0, 0, 0, 0, 0, 0, 0, 0
 
 paletteData:
 .dw $7fff, $6318, $3def, $0000
