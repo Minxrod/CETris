@@ -10,7 +10,7 @@
 
 PSS = plotSScreen
 field = PSS
-hold = PSS + 256
+holdT= PSS + 256
 curX = PSS + 266
 curY = PSS + 267
 curR = PSS + 268
@@ -23,7 +23,6 @@ curBlock = PSS + 276
 score = PSS + 300 ;to 302: max score is 16777216
 level = PSS + 304
 lines = PSS + 308 
-
 main:
  call initLCD
  call initGame
@@ -34,6 +33,8 @@ main:
 initGame:
  ld a,1
  ld (level),a
+ ld a,7
+ ld (holdT),a
  call newBlock
 game:
  ld a,(kbdG7)
@@ -48,6 +49,9 @@ game:
  ld a,(kbdG2)
  bit kbitAlpha, a
  call nz, checkRotationRight
+ ld a,(kbdG3)
+ bit kbitGraphVar, a
+ call nz, hold
  ;check exit
  ld a,(kbdG1)
  bit kbitDel, a
@@ -57,12 +61,45 @@ game:
  jp game
  ret
 
+hold:
+ ld a,(holdT)
+ cp 7
+ jr z, firstHold
+ 
+ ;need to swap held block and current block using transfer memory
+ ld a,(holdT)
+ ld b,a
+ ld a,(curT)
+ ld c,a
+ ld a,b
+ ld (curT),a
+ ld a,c
+ ld (holdT),a
+ 
+ ld a,(curT)
+ call determinedBlock
+ ret
+firstHold:
+ ld a,(curT)
+ ld (holdT),a
+ 
+ call newBlock ;geneate a new block: nothing to load
+ ret
+ 
 update:
  ld hl,(timerT)
  inc hl
  ld (timerT),hl
- bit 5,l
- jr nz, drop
+ 
+ ;calculate gravity
+ ld b,l ;current time
+ ld a, (level)
+ add a,a
+ ld l, a ;l=2*level
+ ld a, 60
+ sub l ;60 - level
+ cp b
+ jr c, drop
  ld a,(lockTimer)
  cp -1
  jr z, skipLockCheck
@@ -74,9 +111,29 @@ skipLockCheck:
  ld a,(kbdG7)
  bit kbitDown,a
  jr nz, userdrop
+ ld a,(kbdG7)
+ bit kbitUp, a
+ jr nz, harddrop
  call checkLines
  ret
 
+hardDrop:
+ ld a,(lockTimer)
+ cp -1
+ jr nz, hdrop
+ ld hl,(score)
+ inc hl
+ inc hl
+ ld (score),hl
+ ld hl,0
+ ld (timerT),hl
+ call checkBlockDown
+ jr hardDrop
+hdrop:
+ ld a,5
+ ld (lockTimer),a
+ ret
+ 
 userDrop:
  ld a,(lockTimer)
  cp -1
@@ -151,7 +208,11 @@ noIncrementE:
  ld hl,(lines)
  add hl,de
  ld (lines),hl
+ ld a,10
+ call _DivHLbyA
+ ld (level),hl
  
+ ld a,(linesClear)
  ld de,0
  ld e,a
  ld hl,pointsPerLine
@@ -214,7 +275,34 @@ newBlock:
  ld a,0
  ld (curY),a
  ld (curR),a
+ ld (lockTimer),a
  call random
+ ld (curT),a
+ ld ix,blockData
+ ld d,a
+ add a,a
+ add a,a
+ add a,d
+ add a,a
+ ld de,0
+ ld e,a
+ add ix, de
+ ld a,(ix+spritePAL)
+ ld (curPAL),a
+ ld a,(curT) ;ensure copied blockdata is CORRECT?
+ call copyBlockData
+ ret
+ 
+;a=block type
+determinedBlock:
+ push af
+ ld a,5
+ ld (curX),a
+ ld a,0
+ ld (curY),a
+ ld (curR),a
+ ld (lockTimer),a
+ pop af
  ld (curT),a
  ld ix,blockData
  ld d,a
@@ -265,6 +353,37 @@ drawBlockFieldX:
  ld l,a
  ld a,(curT)
  call drawMino
+ 
+ ;draw hold field
+ ld b,4
+drawHoldFieldY:
+ push bc
+ ld c,b
+ ld b,4 ;(b,c) = (x,y)
+drawHoldFieldX:
+ push bc
+ push hl
+ ld h,b
+ ld a,10
+ add a,h
+ ld h,a
+ ld l,c
+ ld a,14
+ add a,l
+ ld l,a
+ ld a,0
+ ld (tSpritePAL),a
+ call drawOneBlock
+ pop hl
+ pop bc
+ djnz drawHoldFieldX
+ pop bc
+ djnz drawHoldFieldY
+ 
+ ld h,12
+ ld l,17
+ ld a,(holdT)
+ call drawHeldMino
  
  call drawScore
  halt
@@ -798,6 +917,30 @@ transPixel:
  djnz putSpriteYLoop
  ret
 
+drawHeldMino:
+ ld d,a ;save d for later
+ push hl
+ ld hl, blockData
+ add a,a ;x2
+ add a,a ;x4
+ add a,d ;x5
+ add a,a ;x10
+ ld de,0
+ ld e,a ;de = offset from blockData
+ add hl, de ;block data ptr
+ push hl
+ ld de,spriteID
+ add hl,de
+ ld a, (hl)
+ ld (tSpriteID),a
+ inc hl ;block data + id + pal
+ ld a, (hl)
+ ld (tSpritePAL),a
+ ld b,4
+ pop de ;bdptr
+ pop hl ;coords
+ jp drawAllBlocks
+ 
 ;inputs:
 ; h=x (in grid tiles)
 ; l=y (in grid tiles)
@@ -887,7 +1030,7 @@ drawScore:
  ld c,48
  ld de, 160
  ld l, 48
- ld ix,levelSprite
+ ld ix,linesSprite
  call drawSprite
  ;calculate score display.
  
