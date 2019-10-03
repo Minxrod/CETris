@@ -43,7 +43,10 @@ initGame:
  ld (level),a
  ld a,7
  ld (holdT),a
+ 
+ call initBag
  call newBlock
+ 
 game:
  ld a,(kbdG7)
  bit kbitLeft, a
@@ -285,7 +288,7 @@ newBlock:
  ld (curY),a
  ld (curR),a
  ld (lockTimer),a
- call random
+ call getNextBagItem
  ld (curT),a
  ld ix,blockData
  ld d,a
@@ -396,7 +399,6 @@ drawHoldFieldX:
  
  call drawScore
  call copyBufferVRam ;double-buffering
- halt
  ret
 
 checkMoveLeft:
@@ -1168,20 +1170,142 @@ d24bnLoop:
  ret
  
 randsav:
- .db 00
-random:
- ld a,r
+ .db 0,0,0,0
+randbag:
+ .db 0,0,0,0,0,0,0 ;7 slots for the 7 pieces
+randbag2:
+ .db 0,0,0,0,0,0,0 ;backup bag for next 7
+RANDOM_NULL = 7 ;empty slot
+
+getNextBagItem:
+ ld a,(randbag) ;get first item
+ push af
+ ld hl,randbag+1
+ ld de,randbag
+ ld bc,13
+ ldir ;slide all previous items up in queue
+ ld hl,randbag2 + 6
+ ld (hl),RANDOM_NULL
+ ld a,(randbag2)
+ cp RANDOM_NULL ;check that randbag2 is not empty
+ ld hl,randBag2
+ call z,randFillBag ;if the bag is empty, fill it.
+ pop af
+ ret
+
+initBag:
+ call randInit
+ 
+ ld hl, randbag
+ call randFillBag
+ ld hl, randbag2
+ call randFillBag
+ ret
+
+;input:
+;hl= ptr to bag to fill 
+randBagPtr:
+ .db 0,0,0 ;save ptr to bag here
+randFillBag: 
+ ld b,7
+ ld (randBagPtr),hl
+randFillLoop:
+ push bc
+ push hl
+randTryAgain:
+ call rand
+ ld a,e
  and $07
- cp $07
- ret nz
- ld a,(randsav)
+ cp RANDOM_NULL
+ jr z, randTryAgain ; seven is not an OK random number
+ ld b, 7
+ ld hl, (randBagPtr)
+randCheckLoop:
+ cp (hl)
+ jr z, randTryAgain
+ inc hl
+ djnz randCheckLoop
+ pop hl
+ ld (hl),a ;value is good; save
+ inc hl ;next item
+ pop bc
+ djnz randFillLoop
+ ret
+
+randseed:
+ .db 0,0,0
+randinput:
+ .db 0
+ 
+;initialize random stuff
+randInit:
+ ;init randseed
+ ld a,r
+ ld (randseed),a
+ ld a,r
+ add a,42
+ ld (randseed+1),a
+ 
+ ;init bags with RANDOM_NULL
+ ld hl, randbag
+ ld de, randbag+1
+ ld bc, 13
+ ld (hl), RANDOM_NULL
+ ldir
+ ret
+ 
+
+;generates a random 16-bit nubmer
+;galosis LFSR, based on wikipedia page
+;en.wikipedia.org/wiki/Linear-feedback_shift_register
+;I no longer know how this works, it's a copy of a copy of a z80 version I wrote.
+;The idea is something to do with right shifting
+;and XORing with the previously shifted bit to get a long cycle.
+;Just read the wikipedia page.
+rand:
+ ld de,(randseed)
+ ld a,(randinput)
+ cp 0
+ call nz,randXOR
+ ld a,(randinput)
+ ld l,a
+ push hl
+ pop af
+ rr d
+ rr e
+ push af
+ pop hl
+ ld a,l
+ ld (randinput),a
+ ld (randseed),de
+ ret
+randXOR:
+ ld a,%10110100 ;this is the ideal set of bits to invert for a maximal cycle, apparently.
+ xor d
+ ld d,a
+ ret
+
+;old-new random
+random:
+ ld hl,randsav
+ ld a,r
+ and $03
+ ld b,a ;id
+ inc b
+randIncSav:
+ inc hl
+ djnz randIncSav
+ dec hl
+ 
+ ;hl is one of four random slots
+ ld a,(hl)
  inc a
- ld (randsav),a
- cp $07
+ ld (hl),a
+ cp RANDOM_NULL
  ret nz
  ld a,0
- ld (randsav),a
- ret 
+ ld (hl),a
+ ret
  
 tSpriteID:
  .db 0
