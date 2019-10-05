@@ -12,7 +12,7 @@
 LOCK_DISABLE = -1
 vRamSplitSize = (vRamEnd - vRam) / 2 
 vRamSplit = vRam + vRamSplitSize 
- 
+
 ;variables and memory regions
 PSS = plotSScreen
 field = PSS
@@ -216,23 +216,21 @@ noIncrementE:
  ;add to lines cleared
  ld a,(linesClear)
  ld de,0
- ld e,a
+ ld e,a ;de is lines cleared
  ld hl,(lines)
  add hl,de
  ld (lines),hl
- ld a,10
- call _DivHLbyA
- ld (level),hl
  
- ld a,(linesClear)
- ld de,0
- ld e,a
  ld hl,pointsPerLine
  add hl,de
- ld a,(hl) ;score to add for lines cleared
  ld de,0
+ ld a,(hl) ;score to add for lines cleared
  ld e,a
- ld hl,0
+ ld a,(level) ;level multiplier
+ ld d,a
+ mlt de ;level * linesClear
+ 
+ ld hl,0 ;de is score to multiply by 100
  add hl,de ;1
  add hl,hl ;2
  add hl,hl ;4
@@ -248,6 +246,13 @@ noIncrementE:
  ld de,(score)
  add hl,de ;score+=100a
  ld (score),hl
+ 
+ ;makeshift level calculation until it is more formalized
+ ld hl,(lines)
+ ld a,10
+ call _DivHLbyA
+ inc hl
+ ld (level),hl
  ret
  
 clearLine:
@@ -432,12 +437,16 @@ checkBlocksInLeft:
  inc hl
  inc hl ;increment to next X
  djnz checkBlocksinLeft
+ 
  ;here: no blocks too far left...
  ld a,(curX)
  dec a
  ld (curX),a
- ld a, -1
+ 
+ ;check if block needs lock
+ ld a, LOCK_DISABLE
  ld (lockTimer),a
+ call checkBlockDownOK
 blockTooFarLeft:
  ret
 
@@ -478,24 +487,27 @@ skipAdjust4:
  ld b,4
  
 checkBlocksRotateLeft:
+ ld (rotationTempBC),bc
  ;get y
  ld a,(hl)
+ neg
  ld e,a
  ld a,(rY)
  add a,e
  cp 20
  jr nc, noRotationLeft
  ld e,a
- inc hl
+ 
  ;get x
+ inc hl
  ld a,(hl)
- neg
  ld d,a
  ld a,(rX)
  add a,d
  cp 10
  jr nc, noRotationLeft
  ld d,a
+ 
  ld (rotationTempHL),hl
  push de
  pop hl
@@ -504,6 +516,7 @@ checkBlocksRotateLeft:
  jp nz,noRotationLeft
  ld hl,(rotationTempHL)
  inc hl
+ ld bc,(rotationTempBC)
  djnz checkBlocksRotateLeft
 ;rotation is a go
  ld b,4
@@ -511,10 +524,10 @@ checkBlocksRotateLeft:
 rotateBlocksLeft:
  push bc
  ld a,(hl)
+ neg
  ld e,a
  inc hl
  ld a,(hl)
- neg
  ld d,a
  dec hl ;back to X location
  ld (hl),d
@@ -523,21 +536,21 @@ rotateBlocksLeft:
  inc hl
  pop bc
  djnz rotateBlocksLeft
+ pop hl
+ 
+ ld a, -1
+ ld (lockTimer),a
+ call checkBlockDownOK
  
  ld a,(curR)
  dec a
  and $03
  ld (curR),a
- pop hl
  
  ld a,(rX)
  ld (curX),a
- ld a,(ry) ;save the location of the successful turn.
+ ld a,(rY) ;save the location of the successful turn.
  ld (curY),a
- 
- ld a, -1
- ld (lockTimer),a
- 
  ret
 noRotationLeft:
  pop hl ;get offset
@@ -554,12 +567,14 @@ noRotationLeft:
  ld (rAttempt),a
  cp 5
  jp nz, checkBlocksRotateLeft
-doneLeft:
+
  pop hl ;unneeded.
  ret
  
 rotationTempHL:
  .db 0,0,0 ;3 bytes for HL
+rotationTempBC:
+ .db 0,0,0 ;3 bytes for BC
 rX:
  .db 0
 rY:
@@ -602,35 +617,6 @@ calculateRXY:
  ld (rY), a
  inc hl ;hl is 2 past previous offset ->
  ret
-
-;HL should be current state table pair
-;DE should be 10
-calculateRXYRight:
- ld de,10
- ;to calculate rotation offsets, subtract new kick (this hl) from current kick (hl before adding de)
- ld a, (hl) ;old kick
- add hl,de ;to new kick ptr
- ld c, (hl) ;new kick
- sub c ;a-c = oldx-newx
- ld c, a ;c=ox-nx
- ld a, (curX) ;current X location.
- add a,c ;curX + (ox - nx) = curX + ofsX
- ld (rX),a ;rX is cX + ofsX
- or a
- sbc hl,de ;back to old kick ptr
- inc hl ;to Y ptrs
- ld a, (hl) ;old kick y
- add hl,de ;to new kick y ptr
- ld c, (hl) ;new kick y
- sub c ;a-c = oldy-newy
- ld c,a ;c=oy-ny=ofsy
- ld a, (curY) ;current y location
- add a,c
- ld (rY),a ;rY is cY + ofsY
- or a
- sbc hl,de ;back to old ptr again
- inc hl ;to x of next kick (save for later)
- ret
  
 lineKickRight:
  ld hl, kicksI ;testing
@@ -650,9 +636,8 @@ sharedKickRight:
  pop hl ;restore table address
  add hl,de ;offset + table = starting rotation kick
  
- ;unneeded:
- ;ld de,10
- call calculateRXYRight ;hl is up two now, rxy stored
+ ld de,10
+ call calculateRXY ;hl is up two now, rxy stored
  push hl ;at next offset already
  
  ld a,0
@@ -661,10 +646,11 @@ sharedKickRight:
  ld hl, curBlock
  ld b,4
 checkBlocksRotateRight:
+ ld (rotationTempBC),bc
  ;<x,y> to <y,-x>
  ;get newy=-oldx
  ld a,(hl) ;oldX
- neg ;-oldX
+ ;neg ;-oldX
  ld e,a ;e=-oldx
  ld a,(rY) 
  add a,e ;rY-oldX = new y location
@@ -674,6 +660,7 @@ checkBlocksRotateRight:
  ;get x
  inc hl ;now (hl)=oldY
  ld a,(hl)
+ neg
  ld d,a ;d=oldY
  ld a,(rX) ;a=rX
  add a,d ;rX+oldY = new x location
@@ -688,18 +675,18 @@ checkBlocksRotateRight:
  jp nz,noRotationRight ;if block, skip rotation
  ld hl,(rotationTempHL) 
  inc hl ;hl is now 2 past offset, to check next block
+ ld bc,(rotationTempBC)
  djnz checkBlocksRotateRight
 ;rotation is a go
  ld b,4
  ld hl, curBlock
-
 rotateBlocksRight:
  push bc
  ld a,(hl) ;curBlock x
- neg
  ld e,a ;e=new y
  inc hl ;to curblocky ptr
  ld a,(hl)
+ neg
  ld d,a
  dec hl ;back to curblockX location
  ld (hl),d ;save new x
@@ -708,10 +695,11 @@ rotateBlocksRight:
  inc hl
  pop bc
  djnz rotateBlocksRight
+ pop hl ;unneeded next kick ofs
  
  ld a, -1
  ld (lockTimer),a
- pop hl ;unneeded next kick ofs
+ call checkBlockDownOK
  
  ld a,(curR) ;increment angle
  inc a
@@ -720,31 +708,26 @@ rotateBlocksRight:
  
  ld a,(rX)
  ld (curX),a
- ld a,(ry) ;save the location of the successful turn.
+ ld a,(rY) ;save the location of the successful turn.
  ld (curY),a
  ret
 noRotationRight:
  pop hl ;get offset
- 
- ;unnecessary:
- ;ld de,10
- call calculateRXYRight ;new rxy stored - hl is already at next ofs
+
+ ld de,10
+ call calculateRXY ;new rxy stored - hl is already at next ofs
  push hl ;at next offset already
- 
- ld a,(curT)
- cp 3
- jp z, doneRight
+ ;reinitialize loop
+ ld hl, curBlock
+ ld b,4
  
  ld a,(rAttempt)
  inc a
  ld (rAttempt),a
  
- ;reinitialize loop
- ld hl, curBlock
- ld b,4
  cp 5 ;compare rAttempt: if 5 attempts have hit do not jump back
  jp nz, checkBlocksRotateRight
-doneRight:
+ 
  pop hl ;unneeded.
  ret
  
@@ -784,12 +767,10 @@ checkBlocksInRight:
  inc a
  ld (curX),a
  
- ;if enabled, disable lock timer
- ld a, (lockTimer)
- cp -1 
- jr z, blockTooFarRight ;timer is enabled
- ld a, -1
+ ;check if still needs lock timer
+ ld a, LOCK_DISABLE
  ld (lockTimer),a
+ call checkBlockDownOK
 blockTooFarRight:
  ret
 
@@ -1108,7 +1089,6 @@ drawScore:
  call draw24BitNumber
  
  ld hl,(level)
- inc hl ;no level zero, please
  ld b, 2
  ld d, 160
  ld e, 32
@@ -1119,8 +1099,83 @@ drawScore:
  ld d, 160
  ld e, 56
  call draw24BitNumber
+ 
+ call drawDebugInfo
  ret
 
+drawDebugInfo:
+ ld hl,0
+ ld a,(curR)
+ ld l,a
+ ld b,3
+ ld d,160
+ ld e,120
+ call draw24BitNumber
+ 
+ ld hl,0
+ ld a,(curX)
+ ld l,a
+ ld b,3
+ ld d,160
+ ld e,128
+ call draw24BitNumber
+ 
+ ld hl,0
+ ld a,(curY)
+ ld l,a
+ ld b,3
+ ld d,160
+ ld e,136
+ call draw24BitNumber
+ 
+ ld hl,0
+ ld a,(rX)
+ ld l,a
+ ld b,3
+ ld d,160
+ ld e,152
+ call draw24BitNumber
+ 
+ ld hl,0
+ ld a,(rY)
+ ld l,a
+ ld b,3
+ ld d,160
+ ld e,160
+ call draw24BitNumber
+ 
+ ld hl,0
+ ld a,(rAttempt)
+ ld l,a
+ ld b,2
+ ld d,160
+ ld e,168
+ call draw24BitNumber
+ 
+ ld b,8 ;4 pairs of x,y
+ ld hl,curBlock
+ ld e,136 ;starting y coord
+drawBlockCoords:
+ push bc
+ push hl
+ 
+ ld a,(hl) ;load from block struct
+ ld hl,0
+ ld l,a
+ ld b,3
+ ld d,200
+ push de
+ call draw24BitNumber
+ pop de
+ ld a,8
+ add a,e
+ ld e,a ;add 8 to Y coords
+ pop hl
+ inc hl ;next item of blockdata
+ pop bc
+ djnz drawBlockCoords
+ ret
+ 
 ;inputs: b=num digits
 ;hl = number
 ;d,e = x,y
@@ -1382,7 +1437,7 @@ kicksI:
  .db -1, 0,  0, 0,  0, 0,  0,-1,  0, 2
  .db -1,-1,  1,-1, -2,-1,  1, 0, -2, 0
  .db  0,-1,  0,-1,  0,-1,  0, 1,  0,-2
- .db  0, 0, -1, 0,  2, 0, -1, 0,  2, 0
+ .db  0, 0, -1, 0,  2, 0, -1, 0,  2, 0 ;same
  
 kicksO:
  .db  0, 0
