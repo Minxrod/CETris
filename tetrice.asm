@@ -1,15 +1,12 @@
 #include "includes\ti84pce.inc"
 
-; Credits:
-; Minxrod - Primary developer
-; Michael - troubleshooting
-
  .assume ADL=1
  .org userMem-2
  .db tExtTok,tAsm84CeCmp
 
 ;program specfic constants:
 LOCK_DISABLE = -1
+NULL_BLOCK = -1
 vRamSplitSize = (vRamEnd - vRam) / 2 
 vRamSplit = vRam + vRamSplitSize 
 
@@ -30,6 +27,23 @@ score = PSS + 300 ;to 302: max score is 16777216
 level = PSS + 304
 lines = PSS + 308 
 
+;graphical and data resources
+;note: info must be RELOCATED to this location.
+SSS = saveSScreen
+idataX = 0 ;low byte
+idataXH= 1 ;high byte
+idataY = 2
+idataE = 3
+idataSize = 4 ;XXYE
+fieldinfo = SSS + (0 * idataSize)
+scoreinfo = SSS + (1 * idataSize)
+levelinfo = SSS + (2 * idataSize)
+linesinfo = SSS + (3 * idataSize)
+holdinfo = SSS + (4 * idataSize)
+previewinfo = SSS + (5 * idataSize)
+characterinfo = SSS + (6 * idataSize)
+debuginfo = SSS + (7*idataSize)
+
 ;main program
 main:
  call initLCD
@@ -44,34 +58,59 @@ initGame:
  ld a,7
  ld (holdT),a
  
+ ;clear field
+ ld hl,field
+ ld de,field+1
+ ld bc,255
+ ld (hl),NULL_BLOCK
+ ldir
+ 
+ ;init data
+ ld hl,defaultItemInfo
+ ld de,SSS
+ ld bc,defaultItemInfoEnd - defaultItemInfo
+ ldir ;copy from default to memory
+ 
  call initBag
  call newBlock
  
 game:
+ ld a,(kbdG1)
+ ld (keys),a
+ ld a,(kbdG2)
+ ld (keys+1),a
+ ld a,(kbdG3)
+ ld (keys+2),a
  ld a,(kbdG7)
+ ld (keys+3),a
+ 
+ ld a,(keys+3)
  bit kbitLeft, a
  call nz, checkMoveLeft
- ld a,(kbdG7)
+ ld a,(keys+3)
  bit kbitRight, a
  call nz, checkMoveRight
- ld a,(kbdG1)
+ ld a,(keys+0)
  bit kbit2nd, a
  call nz, checkRotationLeft
- ld a,(kbdG2)
+ ld a,(keys+1)
  bit kbitAlpha, a
  call nz, checkRotationRight
- ld a,(kbdG3)
+ ld a,(keys+2)
  bit kbitGraphVar, a
  call nz, hold
  ;check exit
- ld a,(kbdG1)
+ ld a,(keys+0)
  bit kbitDel, a
  ret nz
  call update
- call draw
+ call drawGame
  jp game
  ret
-
+ 
+keys:
+.db 0,0,0,0
+ 
 hold:
  ld a,(holdT)
  cp 7
@@ -175,9 +214,9 @@ lockAllBlocks:
  ld a,(curY)
  add a,b
  ld l,a
- call checkBlock
- ld a,(curPAL)
- ld (hl),a
+ call checkBlock ;get offset from coords
+ ld a,(curT)
+ ld (hl),a ;save block type
  pop hl
  inc hl
  inc hl
@@ -199,7 +238,7 @@ checkAllLines:
  ld b,10
 checkOneLine:
  push bc
- ld a,0
+ ld a,NULL_BLOCK
  cp (hl)
  jr z,noIncrementE
  inc e
@@ -277,7 +316,7 @@ clearLine:
  ld hl, field
  ld de, field+1
  ld bc,9
- ld (hl),0
+ ld (hl),NULL_BLOCK
  ldir ;clear top row
  
  ld a,(linesClear)
@@ -430,7 +469,7 @@ checkBlocksInLeft:
  ld l,a
  dec h
  call checkBlock
- cp 0
+ cp NULL_BLOCK
  pop hl ;restore and inc 2 block data ptr
  pop bc
  jp nz, blockTooFarRight ;collision with block
@@ -512,7 +551,7 @@ checkBlocksRotateLeft:
  push de
  pop hl
  call checkBlock
- cp 0
+ cp NULL_BLOCK
  jp nz,noRotationLeft
  ld hl,(rotationTempHL)
  inc hl
@@ -671,7 +710,7 @@ checkBlocksRotateRight:
  push de
  pop hl ;d,e -> h,l =new coordinates
  call checkBlock
- cp 0 ;check if no block
+ cp NULL_BLOCK ;check if no block
  jp nz,noRotationRight ;if block, skip rotation
  ld hl,(rotationTempHL) 
  inc hl ;hl is now 2 past offset, to check next block
@@ -755,7 +794,7 @@ checkBlocksInRight:
  ld l,a
  inc h
  call checkBlock
- cp 0
+ cp NULL_BLOCK
  pop hl ;restore and inc 2 block data ptr
  pop bc
  jr nz, blockTooFarRight ;collision with block
@@ -808,7 +847,7 @@ checkBlocksInDown:
  ld l,a
  inc l
  call checkBlock
- cp 0
+ cp NULL_BLOCK
  pop hl
  pop bc
  jr nz,blockTooFarDown ;block is hit
@@ -1034,7 +1073,7 @@ drawAllBlocks:
 ;inputs:
 ;h=x+ofsx
 ;l=y+ofsy
-;(tSpritePal)
+;(tSpritePal), (tSpriteID)
 drawOneBlock:
  ld a,l
  cp 21
@@ -1042,18 +1081,291 @@ drawOneBlock:
  ld a,h
  cp 26
  ret nc ;still no OOB
- push hl ;save xy
+ ;push hl ;save xy
  ld e,h ;save e=x
  ld h,12
  mlt hl ;hl = 12*y implies l=12*y since y<20
  ld d,12
  mlt de ;de = 12*(x + xOfs)
+ 
+ ;starting here:
+ ;skips bounds check 
+ ;accepts (DE, L) as coordinates
+ ;still needs tSpriteID and tSpritePAL
+drawOneBlockNoGrid:
+ ld a, (tSpriteID)
+ ld b,144
+ ld c,a ;sprite size * a
+ mlt bc
+ ld ix, spriteData
+ add ix,bc ;spriteData+64*spriteID
+ 
+ ld a, (tSpritePAL)
  ld b,12
  ld c,b
- ld a, (tSpritePAL)
- ld ix, spriteData
  call drawSprite
- pop hl ;restore old coordinates
+ ;pop hl ;restore old coordinates
+ ret
+
+drawGame:
+ call drawField
+ call drawScoreInfo
+ call drawCurrentMino
+ call drawCurrentHold
+ 
+ call copyBufferVRam
+ ret
+
+drawNullBlock:
+ ld a,0
+ ld (tSpriteID),a
+ ld (tSpritePAL),a
+ jr drawNullBlockReturn
+ 
+drawField:
+ ld b,20
+drawFieldY:
+ push bc
+ ld c,b
+ ld b,10 ;(b,c) = (x,y)
+drawFieldX:
+ push bc
+ ld h,b
+ dec h
+ ld l,c
+ dec l
+ push hl
+ call checkBlock
+ cp NULL_BLOCK
+ jr z,drawNullBlock
+ ld a,(hl) ;a is now curT
+ ld d,a
+ add a,a ;2
+ add a,a ;4
+ add a,d ;5
+ add a,a ;10
+ ld de,0
+ ld e,a
+ ld hl,blockData + spriteID
+ add hl,de ;find block sprite ID and pal from here
+ ld a,(hl)
+ ld (tSpriteID),a
+ inc hl ;spritePAL
+ ld a,(hl)
+ ld (tSpritePAL),a
+drawNullBlockReturn:
+ pop hl ;use same grid coords, but operate differently
+ ld e,h ;save e=x
+ ld h,12
+ mlt hl ;hl = 12*y implies l=12*y since y<20
+ ld d,12
+ mlt de ;de = 12*(x + xOfs)
+ ;(de, l) are the coordinates
+ ;now, layout offset must be added.
+ ld a,(fieldInfo + iDataX)
+ add a,e
+ ld e,a  ;12x+ layoutOfsX
+ ld a,(fieldInfo + iDataXH)
+ adc a,d ;add high byte x ofs - include carry for completeness
+ ld d,a
+ ld a,(fieldInfo + iDataY)
+ add a,l ;no bounds check! careful!
+ ld l,a
+ ;de = 12xgrid+lofsx
+ ;l  = 12ygrid+lofsy
+ ;tSprite stuff is OK
+ call drawOneBlockNoGrid
+skipBlockDraw:
+ pop bc
+ djnz drawFieldX
+ pop bc
+ djnz drawFieldY
+ 
+ ret
+ 
+drawScoreInfo:
+ ld a,0
+ ld b,8
+ ld c,48
+ ld hl,scoreInfo
+ ld de,0
+ ld e,(hl) ;x
+ inc hl
+ ld d,(hl) ;xh
+ inc hl
+ ld l,(hl) ;y
+ ld ix,scoreSprite
+ call drawSprite
+ 
+ ld hl,(scoreInfo) ;XXY=LHU
+ add hl,hl ;2
+ add hl,hl ;4;
+ add hl,hl ;8
+ add hl,hl ;16
+ add hl,hl ;32
+ add hl,hl ;64
+ add hl,hl ;128
+ add hl,hl ;256HL -> 256*X in UH, 0 in L
+ ld a,(scoreInfo + iDataY)
+ ld de,0
+ ld d,h ;x mod 256 (unintended limit)
+ ld e,8
+ add a,e ;add 8 to y (below "score" text)
+ ld e,a ;e = Y
+ ;unintended limit:
+ ;this prevents numbers exceeding 320x though,
+ ;so this is actually pretty nice how it worked out
+ 
+ ld b, 8
+ ld hl,(score)
+ call draw24BitNumber
+ ret
+ 
+drawMinoTempDE:
+ .db 0,0,0
+dmX:
+ .db 0
+dmY:
+ .db 0
+dmOX:
+ .db 0,0
+dmOY:
+ .db 0
+dmOE:
+ .db 0
+ 
+drawCurrentHold:
+ ld a,0
+ ld (tSpriteID),a
+ ld (tSpritePAL),a
+ 
+ ld b,4
+drawHoldY:
+ push bc
+ ld c,b
+ ld b,4 ;(b,c) = (x,y)
+drawHoldX:
+ push bc
+ ld h,b
+ dec h
+ ld l,c
+ dec l
+ ld e,h ;save e=x
+ ld h,12
+ mlt hl ;hl = 12*y implies l=12*y since y<20
+ ld d,12
+ mlt de ;de = 12*(x + xOfs)
+ ;(de, l) are the coordinates
+ ;now, layout offset must be added.
+ ld a,(holdInfo + iDataX)
+ add a,e
+ ld e,a  ;12x+ layoutOfsX
+ ld a,(holdInfo + iDataXH)
+ adc a,d ;add high byte x ofs - include carry for completeness
+ ld d,a
+ ld a,(holdInfo + iDataY)
+ add a,l ;no bounds check! careful!
+ ld l,a
+
+ call drawOneBlockNoGrid
+ pop bc
+ djnz drawHoldX
+ pop bc
+ djnz drawHoldY
+
+ ld hl,(holdinfo)
+ ld (dmOX),hl ;holdoffsets here.
+ ld a,1
+ ld (dmX),a
+ ld a,2
+ ld (dmY),a
+ ;(1,2) optimally centers piece in hold box
+ 
+ ld a,(holdT)
+ ld d,a ;save d for later
+ ld hl, blockData
+ add a,a ;x2
+ add a,a ;x4
+ add a,d ;x5
+ add a,a ;x10
+ ld de,0
+ ld e,a ;de = offset from blockData
+ add hl, de ;block data ptr
+ push hl
+ ld de,spriteID
+ add hl,de
+ ld a, (hl)
+ ld (tSpriteID),a
+ inc hl ;block data + id + pal
+ ld a, (hl)
+ ld (tSpritePAL),a
+
+ pop de ;bdptr
+ jr drawAnyMino
+ 
+drawCurrentMino:
+ ld a,(curX)
+ ld (dmX),a
+ ld a,(curY)
+ ld (dmY),a
+ ld hl,(fieldInfo) ;loads YXX into HL
+ ld (dmOX),hl ;loads XXY into memory
+ 
+ ld hl, curBlock
+ ld de, spriteID
+ add hl, de ;block data + id
+ ld a, (hl)
+ ld (tSpriteID),a
+ inc hl ;block data + id + 1 -> pal
+ ld a, (hl)
+ ld (tSpritePAL),a
+ ld de,curBlock
+
+;inputs: de=block data struct
+;dmx,dmy,dmox,dmoy
+drawAnyMino: 
+ ld b,4
+ ld (drawMinoTempDE),de
+drawMinoBlocks:
+ push bc
+ 
+ ld de,(drawMinoTempDE)
+ ld hl,0
+ ld a,(dmX)
+ ld l,a
+ ld a,(de) ;x+ofsx
+ add a,l
+ ld l,a
+ ld h,12
+ mlt hl ;12x
+ ld a,(dmOX+iDataX)
+ add a,l ;
+ ld l,a
+ ld a,(dmOX+iDataXH)
+ adc a,h
+ ld h,a ;hl=12x+12o+layoutofsx
+ push hl ;save x
+ inc de
+ 
+ ld hl,0
+ ld a,(dmY)
+ ld l,a
+ ld a,(de)
+ add a,l
+ ld l,a
+ ld h,12
+ mlt hl ;12x
+ ld a,(dmOX+iDataY) ;hmm
+ add a,l
+ ld l,a ;hl=y location
+ inc de
+ ld (drawMinoTempDE),de
+ pop de ;de=x location
+ 
+ call drawOneBlockNoGrid
+ 
+ pop bc
+ djnz drawMinoBlocks
  ret
  
 drawScore:
@@ -1375,6 +1687,17 @@ pointsPerMini:
  .db 1,2,4 
 pointsPerTLine:
  .db 4,8,12,16,24
+ 
+defaultItemInfo:
+ .db   0,  0,  0,  0
+ .db 160,  0,  0,  0
+ .db 160,  0, 24,  0
+ .db 160,  0, 48,  0
+ .db 132,  0,160,  0
+ .db   0,  0,  0,  0
+ .db   0,  0,  0,  0
+ .db 160,  0,  160,0
+defaultItemInfoEnd:
  
 ;format: x ofs, y ofs, spriteID, palette
 spriteID = 8
