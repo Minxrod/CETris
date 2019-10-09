@@ -50,6 +50,7 @@ main:
  call initGame
  
  call resetLCD
+ call restoreKeyboard
  ret
  
 initGame:
@@ -75,14 +76,7 @@ initGame:
  call newBlock
  
 game:
- ld a,(kbdG1)
- ld (keys),a
- ld a,(kbdG2)
- ld (keys+1),a
- ld a,(kbdG3)
- ld (keys+2),a
- ld a,(kbdG7)
- ld (keys+3),a
+ call scanKeys
  
  ld a,(keys+3)
  bit kbitLeft, a
@@ -1110,6 +1104,9 @@ drawOneBlockNoGrid:
 drawGame:
  call drawField
  call drawScoreInfo
+ call drawLevelInfo
+ call drawLinesInfo
+ 
  call drawCurrentMino
  call drawCurrentHold
  
@@ -1216,8 +1213,87 @@ drawScoreInfo:
  ;this prevents numbers exceeding 320x though,
  ;so this is actually pretty nice how it worked out
  
- ld b, 8
+ ld a,(scoreInfo + iDataE)
+ ld b,a
  ld hl,(score)
+ call draw24BitNumber
+ ret
+
+drawLevelInfo:
+ ld a,0
+ ld b,8
+ ld c,48
+ ld hl,levelInfo
+ ld de,0
+ ld e,(hl) ;x
+ inc hl
+ ld d,(hl) ;xh
+ inc hl
+ ld l,(hl) ;y
+ ld ix,levelSprite
+ call drawSprite
+ 
+ ld hl,(levelInfo) ;XXY=LHU
+ add hl,hl ;2
+ add hl,hl ;4;
+ add hl,hl ;8
+ add hl,hl ;16
+ add hl,hl ;32
+ add hl,hl ;64
+ add hl,hl ;128
+ add hl,hl ;256HL -> 256*X in UH, 0 in L
+ ld a,(levelInfo + iDataY)
+ ld de,0
+ ld d,h ;x mod 256 (unintended limit)
+ ld e,8
+ add a,e ;add 8 to y (below "score" text)
+ ld e,a ;e = Y
+ ;unintended limit:
+ ;this prevents numbers exceeding 320x though,
+ ;so this is actually pretty nice how it worked out
+ 
+ ld a,(levelInfo + iDataE)
+ ld b,a
+ ld hl,(level)
+ call draw24BitNumber
+ ret
+ 
+drawLinesInfo:
+ ld a,0
+ ld b,8
+ ld c,48
+ ld hl,linesInfo
+ ld de,0
+ ld e,(hl) ;x
+ inc hl
+ ld d,(hl) ;xh
+ inc hl
+ ld l,(hl) ;y
+ ld ix,linesSprite
+ call drawSprite
+ 
+ ld hl,(linesInfo) ;XXY=LHU
+ add hl,hl ;2
+ add hl,hl ;4;
+ add hl,hl ;8
+ add hl,hl ;16
+ add hl,hl ;32
+ add hl,hl ;64
+ add hl,hl ;128
+ add hl,hl ;256HL -> 256*X in UH, 0 in L
+ ld a,(linesInfo + iDataY)
+ ld de,0
+ ld d,h ;x mod 256 (unintended limit)
+ ld e,8
+ add a,e ;add 8 to y (below "score" text)
+ ld e,a ;e = Y
+ ;unintended limit:
+ ;this prevents numbers exceeding 320x though,
+ ;so this is actually pretty nice how it worked out
+ 
+ ld a,(linesInfo + iDataE)
+ ld b,a
+ ld hl,(lines)
  call draw24BitNumber
  ret
  
@@ -1674,6 +1750,56 @@ randIncSav:
  ld (hl),a
  ret
  
+;source: http://wikiti.brandonw.net/index.php?title=84PCE:Ports:A000
+;I get how this works in theory
+;but it's still sketchy to me
+;so I copied it directly
+scanKeys:
+ di             ; Disable OS interrupts
+ ld hl,0F50000h
+ ld (hl),2      ; Set Single Scan mode
+
+ xor a,a
+scan_wait:
+ cp a,(hl)      ; Wait for Idle mode
+ jr nz,scan_wait
+
+ ; Read data registers here as needed
+ ld a,(kbdG1)
+ ld (keys),a
+ ld a,(kbdG2)
+ ld (keys+1),a
+ ld a,(kbdG3)
+ ld (keys+2),a
+ ld a,(kbdG7)
+ ld (keys+3),a
+ 
+ ei             ; Enable OS interrupts
+ ret
+ 
+;source: http://wikiti.brandonw.net/index.php?title=84PCE:Ports:A000
+;this is similarily copied from the same source as above
+;but I really don't know what this does internally,
+;so I'm copying and not changing anything here.
+;might not be necessary, really
+RestoreKeyboard:
+ ld hl,0F50000h
+ xor a		; Mode 0
+ ld (hl),a
+ inc l		; 0F50001h
+ ld (hl),15	; Wait 15*256 APB cycles before scanning each row
+ inc l		; 0F50002h
+ xor a
+ ld (hl),a
+ inc l		; 0F50003h
+ ld (hl),15	; Wait 15 APB cycles before each scan
+ inc l		; 0F50004h
+ ld a,8		; Number of rows to scan
+ ld (hl),a
+ inc l		; 0F50005h
+ ld (hl),a	; Number of columns to scan
+ ret
+ 
 tSpriteID:
  .db 0
 tSpritePAL:
@@ -1690,9 +1816,9 @@ pointsPerTLine:
  
 defaultItemInfo:
  .db   0,  0,  0,  0
- .db 160,  0,  0,  0
- .db 160,  0, 24,  0
- .db 160,  0, 48,  0
+ .db 160,  0,  0,  8
+ .db 160,  0, 24,  3
+ .db 160,  0, 48,  4
  .db 132,  0,160,  0
  .db   0,  0,  0,  0
  .db   0,  0,  0,  0
