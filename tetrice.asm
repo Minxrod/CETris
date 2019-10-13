@@ -8,7 +8,7 @@
 LOCK_DISABLE = -1
 NULL_BLOCK = -1
 vRamSplitSize = (vRamEnd - vRam) / 2 
-vRamSplit = vRam + vRamSplitSize 
+vRamSplit = vRam + vRamSplitSize
 
 ;variables and memory regions
 PSS = plotSScreen
@@ -27,31 +27,150 @@ score = PSS + 300 ;to 302: max score is 16777216
 level = PSS + 304
 lines = PSS + 308 
 
+rules = PSS + 512
+rbitGameCont = 0
+rbitGameEndless = 1
+rbitSRSEnabled = 2
+rbitPreviewEnabled = 3
+rbitHoldEnabled = 4
+rbitHardDropEnabled =5
+
 ;graphical and data resources
 ;note: info must be RELOCATED to this location.
 SSS = saveSScreen
-idataX = 0 ;low byte
-idataXH= 1 ;high byte
-idataY = 2
-idataE = 3
-idataSize = 4 ;XXYE
-fieldinfo = SSS + (0 * idataSize)
-scoreinfo = SSS + (1 * idataSize)
-levelinfo = SSS + (2 * idataSize)
-linesinfo = SSS + (3 * idataSize)
-holdinfo = SSS + (4 * idataSize)
-previewinfo = SSS + (5 * idataSize)
-characterinfo = SSS + (6 * idataSize)
-debuginfo = SSS + (7*idataSize)
 
 ;main program
 main:
  call initLCD
- call initGame
+ call initData
+ call menu
  
+exit:
  call resetLCD
  call restoreKeyboard
  ret
+
+menuSelection:
+.db 0
+ 
+menu:
+ halt
+ call scanKeys
+ 
+ ld a,(keys)
+ bit kbitDel,a
+ jr nz,menu ;wait for no selection
+ 
+ ;display menu text and stuff
+ ld ix,menuTextData
+ ld b,(ix+0) ;# menu items
+drawMenuLoop:
+ push bc
+ 
+ ld ix,menuInfo
+ call drawText
+ ld a,(ix+iDataY)
+ add a,8
+ ld (ix+iDataY),a
+ 
+ ;this block moves the text pointer forward.
+ ld hl,0
+ ld l,(ix+iDataPTRL)
+ ld h,(ix+iDataPTRH)
+ ld de,SSS
+ add hl,de ;points to text ptr
+ ld a,0
+dMLFindText:
+ cp (hl)
+ inc hl
+ jr nz,dMLFindText
+ ;hl points to next text
+ ld de,SSS
+ or a,a ;clear carry flag
+ sbc hl,de ;hl is now offset from SSS to ptr
+ ld (ix+iDataPTRL),l
+ ld (ix+iDataPTRH),h
+ 
+ pop bc
+ djnz drawMenuLoop
+ call copyBufferVRam
+ 
+menuLoop:
+ halt
+ call scanKeys
+ 
+ ld a,(keys)
+ bit kbitDel,a
+ ret nz ;always an exit option
+ 
+ ld a,(keys+3)
+ bit kbitUp,a
+ call nz, menuUp
+ 
+ ld a,(keys+3)
+ bit kbitDown,a
+ call nz, menuDown
+ 
+ ld a,(keys+0)
+ bit kbit2nd,a
+ jr nz, selectedItem
+ 
+ ld a,(menuSelection)
+ inc a
+ add a,a
+ add a,a
+ add a,a ;y<240 still, so
+ ld hl,0
+ ld l,a
+ ld de,0
+ ld b,8
+ ld c,b
+ ld ix,fontData+640 ;asterisk!
+ ld a,0
+ push hl
+ call clearSprite
+ call drawSprite
+ 
+ call copyBufferVRam
+ pop hl ;use y to clear
+ ld de,0
+ ld b,8
+ ld c,b
+ ld a,0
+ call clearSprite
+ jr menuLoop
+
+menuUp:
+ ld a,(menuSelection)
+ cp 0
+ ret z ;don't go past zero
+ dec a
+ ld (menuSelection),a
+ ret
+ 
+menuDown:
+ ld a,(menuSelection)
+ ld b,a
+ ld a,(menuTextData) ;first byte is # elements
+ dec a
+ dec a
+ cp b
+ ret c ;don't go past end of list
+ inc a
+ ld (menuSelection),a
+ ret 
+ 
+selectedItem:
+ ld a,(menuSelection)
+ ld hl,0
+ ld l,a
+ add hl,hl ;2
+ add hl,hl ;4s: get jump table offset
+ ld de,menuLinkData
+ add hl,de
+
+ jp (hl)
+ ret 
  
 initGame:
  ld a,0
@@ -59,18 +178,18 @@ initGame:
  ld a,7
  ld (holdT),a
  
+ ld ix,rules
+ set rbitGameCont,(ix+0)        ;game is going
+ set rbitSRSEnabled,(ix+0)      ;use srs
+ set rbitHoldEnabled,(ix+0)     ;use hold
+ set rbitHardDropEnabled,(ix+0) ;allow hard drop
+ 
  ;clear field
  ld hl,field
  ld de,field+1
  ld bc,255
  ld (hl),NULL_BLOCK
  ldir
- 
- ;init data
- ld hl,defaultItemInfo
- ld de,SSS
- ld bc,defaultItemInfoEnd - defaultItemInfo
- ldir ;copy from default to memory
  
  call initBag
  call newBlock
@@ -102,7 +221,10 @@ game:
  ret nz
  call update
  call drawGame
- jp game
+ 
+ ld ix,rules
+ bit rBitGameCont, (ix+0)
+ jp nz, game ;jump if nz: bit is 1, game is going
  ret
  
 pause:
@@ -123,15 +245,14 @@ pauseLoop:
  bit kbitDel, a
  ret nz
 
- 
- ld ix, pauseText
- ld de, 32
+ ld ix, pauseText1
+ ld de, 36
  ld hl, 112
  ld a,(pauseColor)
  call drawText
  
  ld ix, pauseText2
- ld de, 32
+ ld de, 36
  ld hl, 120
  ld a,(pauseColor)
  call drawText
@@ -140,16 +261,16 @@ pauseLoop:
  inc a
  and $1f
  ld (pauseColor),a
- 
 
  call copyBufferVRam
  jr pauseLoop
+ 
  ret
 
 pauseColor:
 .db 0
-pauseText:
-.db "GAME",0
+pauseText1:
+.db "~GAME~",0
 pauseText2:
 .db "PAUSED",0
  
@@ -157,6 +278,10 @@ keys:
 .db 0,0,0,0
  
 hold:
+ ld ix,rules
+ bit rbitHoldEnabled,(ix+0)
+ ret z ;hold is disabled
+
  ld a,(holdT)
  cp 7
  jr z, firstHold
@@ -197,12 +322,13 @@ update:
  cp b
  jr c, drop
  ld a,(lockTimer)
- cp -1
+ cp LOCK_DISABLE
  jr z, skipLockCheck
  dec a
  ld (lockTimer),a
  cp 0
  jr z, lock
+ ret
 skipLockCheck:
  ld a,(kbdG7)
  bit kbitDown,a
@@ -213,6 +339,11 @@ skipLockCheck:
  ret
 
 hardDrop:
+ ld ix,rules
+ bit rbitHardDropEnabled,(ix+0)
+ ret z ;hard drop is disabled
+
+hardDropLoop
  ld a,(lockTimer)
  cp LOCK_DISABLE
  jr nz, hdrop ;lock not disabled
@@ -223,7 +354,7 @@ hardDrop:
  ld hl,0
  ld (timerT),hl
  call checkBlockDown
- jr hardDrop
+ jr hardDropLoop
 hdrop:
  ld a,5
  ld (lockTimer),a ;lock enabled for 5 frames
@@ -231,7 +362,7 @@ hdrop:
  
 userDrop:
  ld a,(lockTimer)
- cp -1
+ cp LOCK_DISABLE
  jr nz, drop
  ld hl,(score)
  inc hl
@@ -269,7 +400,16 @@ lockAllBlocks:
  djnz lockAllBlocks
  call checkLines ;only check line clears after a lock
  call newBlock
+ call checkBlockDownOK
+ cp 0
+ jr z,gameEnd
+ ;if block check fails immediately, it's a top out
  ret
+gameEnd:
+ ld ix,rules
+ res rBitGameCont, (ix+0) ;game is not going
+ ret
+
  
 checkLines:
  ld a,0
@@ -571,8 +711,12 @@ noRotationLeft:
  
  ld de,-10
  call calculateRXY ;rxy stored - hl is already at next ofs
- push hl ;at next offset already
- 
+
+ ld ix,rules
+ bit rbitSRSEnabled,(ix+0)
+ ret z ;SRS is disabled - do not try again
+
+ push hl ;at next offset already 
  ld hl, curBlock
  ld b,4
  
@@ -730,15 +874,18 @@ noRotationRight:
 
  ld de,10
  call calculateRXY ;new rxy stored - hl is already at next ofs
- push hl ;at next offset already
- ;reinitialize loop
+ 
+ ld ix,rules
+ bit rbitSRSEnabled,(ix+0)
+ ret z ;SRS is disabled - do not try again
+
+ push hl ;at next offset already 
  ld hl, curBlock
  ld b,4
  
  ld a,(rAttempt)
  inc a
  ld (rAttempt),a
- 
  cp 5 ;compare rAttempt: if 5 attempts have hit do not jump back
  jp nz, checkBlocksRotateRight
  
@@ -1124,7 +1271,7 @@ drawOneBlockNoGrid:
  ld b,144
  ld c,a ;sprite size * a
  mlt bc
- ld ix, spriteData
+ ld ix, (drefSprite)
  add ix,bc ;spriteData+64*spriteID
  
  ld a, (tSpritePAL)
@@ -1135,17 +1282,60 @@ drawOneBlockNoGrid:
  ret
 
 drawGame:
- call drawField
- call drawScoreInfo
- call drawLevelInfo
- call drawLinesInfo
+ ;call drawField
+ ;call drawCurrentMino
+ ;call drawCurrentHold
  
- call drawCurrentMino
- call drawCurrentHold
+ call drawObjects
+ 
+ ;call drawScoreInfo
+ ;call drawLevelInfo
+ ;call drawLinesInfo
  
  call copyBufferVRam
  ret
-
+drawObjA:
+ .db 0
+drawObjects:
+ ld ix,SSSInfo
+ ld b,(ix)
+ inc ix
+drawAllObjects:
+ push bc
+ push ix
+ ;ix = info ptr
+ ld de,0
+ ld e,(ix+iDataType) ;data type is de
+ 
+ ld hl,drawJumps
+ add hl,de
+ add hl,de
+ add hl,de
+ add hl,de ;4type + jumps
+ 
+ ld bc, returnToObjects
+ push bc
+ jp (hl)
+ ;jump to different display options
+ 
+returnToObjects:
+ pop ix
+ ld de,iDataSize
+ add ix,de
+ pop bc
+ djnz drawAllObjects
+ ret
+ 
+drawJumps:
+ jp drawField
+ jp drawText
+ jp draw24BitNumber
+ jp drawSpriteObject
+ jp drawCurrentHold
+ jp drawPreview
+ jp drawBox
+ ret
+ 
 drawNullBlock:
  ld a,0
  ld (tSpriteID),a
@@ -1153,11 +1343,11 @@ drawNullBlock:
  jr drawNullBlockReturn
  
 drawField:
- ld b,20
+ ld b,(ix+iDataH)
 drawFieldY:
  push bc
  ld c,b
- ld b,10 ;(b,c) = (x,y)
+ ld b,(ix+iDataW) ;(b,c) = (w,h)
 drawFieldX:
  push bc
  ld h,b
@@ -1192,129 +1382,30 @@ drawNullBlockReturn:
  mlt de ;de = 12*(x + xOfs)
  ;(de, l) are the coordinates
  ;now, layout offset must be added.
- ld a,(fieldInfo + iDataX)
+ ld a,(ix + iDataXL)
  add a,e
  ld e,a  ;12x+ layoutOfsX
- ld a,(fieldInfo + iDataXH)
+ ld a,(ix + iDataXH)
  adc a,d ;add high byte x ofs - include carry for completeness
  ld d,a
- ld a,(fieldInfo + iDataY)
+ ld a,(ix + iDataY)
  add a,l ;no bounds check! careful!
  ld l,a
  ;de = 12xgrid+lofsx
  ;l  = 12ygrid+lofsy
  ;tSprite stuff is OK
+ push ix ;preserve info ptr
  call drawOneBlockNoGrid
+ pop ix ;for saving data
 skipBlockDraw:
  pop bc
  djnz drawFieldX
  pop bc
  djnz drawFieldY
  
- ret
- 
-drawScoreInfo:
- ld hl,(scoreInfo)
- ld a,(scoreInfo + 3) ;4 bytes at linesInfo
- ld (dInfoCopy),hl
- ld (dInfoCopy + 3),a
- 
- ld hl,(score)
- ld (dInfoNumber),hl
- 
- ld hl,scoreText
- ld (dInfoStringPtr),hl
- 
- call drawInfo
- ret
-
-drawLevelInfo:
- ld hl,(levelInfo)
- ld a,(levelInfo + 3) ;4 bytes at linesInfo
- ld (dInfoCopy),hl
- ld (dInfoCopy + 3),a
- 
- ld hl,(level)
- ld (dInfoNumber),hl
- 
- ld hl,levelText
- ld (dInfoStringPtr),hl
- 
- call drawInfo
- ret
-
-drawLinesInfo:
- ld hl,(linesInfo)
- ld a,(linesInfo + 3) ;4 bytes at linesInfo
- ld (dInfoCopy),hl
- ld (dInfoCopy + 3),a
- 
- ld hl,(lines)
- ld (dInfoNumber),hl
- 
- ld hl,linesText
- ld (dInfoStringPtr),hl
- 
- call drawInfo
- ret
- 
-dInfoCopy:
- .db 0,0,0,0 ;XXYE info structure
-dInfoNumber:
- .db 0,0,0 ;number data
-dInfoStringPtr:
- .db 0,0,0 ;ptr to string data
- 
-;inputs: dInfoCopy, dInfoNumber, dInfoStringPtr
-drawInfo: 
- ld ix,(dInfoStringPtr)
- 
- ld hl, dInfoCopy
- ld de,0
- ld a,(hl)
- ld e,a
- inc hl
- 
- ld a,(hl)
- ld d,a
- inc hl
- 
- ld a,(hl)
- ld hl,0
- ld l,a
- 
- ld a,32
- ;de = x l = y
- ;ix = string ptr
- ;a = color
- 
- call drawText
- 
- ;number code
- ld hl,(dInfoCopy) ;XXY=LHU
- add hl,hl ;2
- add hl,hl ;4;
- add hl,hl ;8
- add hl,hl ;16
- add hl,hl ;32
- add hl,hl ;64
- add hl,hl ;128
- add hl,hl ;256HL -> 256*X in UH, 0 in L
- ld a,(dInfoCopy + iDataY)
- ld de,0
- ld d,h ;x mod 256 (unintended limit)
- ld e,8
- add a,e ;add 8 to y (below "score" text)
- ld e,a ;e = Y
- ;unintended limit:
- ;this prevents numbers exceeding 320x though,
- ;so this is actually pretty nice how it worked out
- 
- ld a,(dInfoCopy + iDataE)
- ld b,a
- ld hl,(dInfoNumber)
- call draw24BitNumber
- 
+ push ix
+ call drawCurrentMino
+ pop ix
  ret
  
 drawMinoTempDE:
@@ -1331,15 +1422,21 @@ dmOE:
  .db 0
  
 drawCurrentHold:
+ push ix ;save data ptr
+ ld ix,rules
+ bit rbitHoldEnabled,(ix+0)
+ pop ix ;restore data ptr/stack
+ ret z ;hold is disabled
+ 
  ld a,0
  ld (tSpriteID),a
  ld (tSpritePAL),a
  
- ld b,4
+ ld b,(ix+iDataH)
 drawHoldY:
  push bc
  ld c,b
- ld b,4 ;(b,c) = (x,y)
+ ld b,(ix+iDataW) ;(b,c) = (w,h)
 drawHoldX:
  push bc
  ld h,b
@@ -1353,24 +1450,31 @@ drawHoldX:
  mlt de ;de = 12*(x + xOfs)
  ;(de, l) are the coordinates
  ;now, layout offset must be added.
- ld a,(holdInfo + iDataX)
+ ld a,(ix + iDataXL)
  add a,e
  ld e,a  ;12x+ layoutOfsX
- ld a,(holdInfo + iDataXH)
+ ld a,(ix + iDataXH)
  adc a,d ;add high byte x ofs - include carry for completeness
  ld d,a
- ld a,(holdInfo + iDataY)
+ ld a,(ix + iDataY)
  add a,l ;no bounds check! careful!
  ld l,a
 
+ push ix ;preserve data ptr
  call drawOneBlockNoGrid
+ pop ix ;restore data ptr
  pop bc
  djnz drawHoldX
  pop bc
  djnz drawHoldY
 
- ld hl,(holdinfo)
- ld (dmOX),hl ;holdoffsets here.
+ ld a,(ix+iDataXL)
+ ld (dmOX),a
+ ld a,(ix+iDataXH)
+ ld (dmOX+1),a
+ ld a,(ix+iDataY)
+ ld (dmOX+2),a
+ 
  ld a,1
  ld (dmX),a
  ld a,2
@@ -1404,8 +1508,13 @@ drawCurrentMino:
  ld (dmX),a
  ld a,(curY)
  ld (dmY),a
- ld hl,(fieldInfo) ;loads YXX into HL
- ld (dmOX),hl ;loads XXY into memory
+ 
+ ld a,(ix+iDataXL)
+ ld (dmOX),a
+ ld a,(ix+iDataXH)
+ ld (dmOX+1),a
+ ld a,(ix+iDataY)
+ ld (dmOX+2),a
  
  ld hl, curBlock
  ld de, spriteID
@@ -1434,10 +1543,10 @@ drawMinoBlocks:
  ld l,a
  ld h,12
  mlt hl ;12x
- ld a,(dmOX+iDataX)
+ ld a,(dmOX+0)
  add a,l ;
  ld l,a
- ld a,(dmOX+iDataXH)
+ ld a,(dmOX+1)
  adc a,h
  ld h,a ;hl=12x+12o+layoutofsx
  push hl ;save x
@@ -1451,27 +1560,41 @@ drawMinoBlocks:
  ld l,a
  ld h,12
  mlt hl ;12x
- ld a,(dmOX+iDataY) ;hmm
+ ld a,(dmOX+2) ;hmm
  add a,l
  ld l,a ;hl=y location
  inc de
  ld (drawMinoTempDE),de
  pop de ;de=x location
  
+ push ix
  call drawOneBlockNoGrid
- 
+ pop ix
  pop bc
  djnz drawMinoBlocks
  ret
 
-;inputs: ix = string ptr
-;de = x
-;l = y;
-;a = color 
 drawTextColor:
  .db 0
 
+;inputs: ix = data ptr
 drawText:
+ push ix
+ ld bc,SSS
+ ld hl,0
+ ld h,(ix+iDataPTRH)
+ ld l,(ix+iDataPTRL)
+ add hl,bc
+ push hl
+ 
+ ld de,0
+ ld e,(ix+iDataXL)
+ ld d,(ix+iDataXH)
+ ld hl,0
+ ld l,(ix+iDataY) ;xy set
+ ld a,(ix+iDataA) ;color
+ pop ix ;this is now the string data ptr
+
  ld (drawTextColor),a
 drawTextLoop:
  ld a,(ix)
@@ -1488,7 +1611,7 @@ drawTextLoop:
  rr c ;128a = bc
  srl b 
  rr c ;64a = bc
- ld ix,fontData
+ ld ix,(drefFont)
  add ix,bc ;fontData + 64a (character)
  ld bc,-2048 ;account for missing ctrl characters
  add ix,bc ;fontData + 64(a - 32) ;ascii adjust
@@ -1496,8 +1619,6 @@ drawTextLoop:
  ld b,8
  ld c,b ;8x8 font
 
- ld a,0
- call clearSprite
  ld a,(drawTextColor)
  call drawSprite
  pop hl ;de, x coords
@@ -1510,21 +1631,45 @@ drawTextLoop:
  inc ix
  jr drawTextLoop
 textLoopEnd:
+ pop ix ;restore ix to data ptr
  ret
  
-;inputs: b=num digits
-;hl = number
-;d,e = x,y
+;inputs: ix = data struct
 draw24Saved:
  .db 0,0,0
 draw24BitNumber:
+ push ix
+ ld hl,0
+ ld h,(ix+iDataPTRH)
+ ld l,(ix+iDataPTRL)
+ ld bc,PSS
+ add hl,bc ;ptr to number
+ 
+ ld a,(hl)
+ ld (draw24Saved),a
+ inc hl
+ ld a,(hl)
+ ld (draw24Saved+1),a
+ inc hl
+ ld a,(hl)
+ ld (draw24Saved+2),a
+ 
+ ld hl,(draw24Saved) ;this is the number
+ 
+ ld d,(ix+iDataXL)
+ ld e,(ix+iDataY)
+ ld b,(ix+iDataW)
  ld (draw24Saved),de
 d24bnLoop:
  push bc
  ld a,10
  call _DivHLbyA ;apparently a is remainer here
  push hl ;save score for later
- ld de,numbers
+ ld de,(drefFont)
+ ld hl,numbers - fontData ;offset to numbers
+ add hl,de ;fontdata + offset to numbers
+ push hl
+ pop de ;de=fontData
  ld hl,0
  ld l,a
  add hl,hl
@@ -1560,6 +1705,33 @@ d24bnLoop:
  pop hl
  pop bc
  djnz d24bnLoop
+ pop ix ;restore data ptr
+ ret
+
+;ix = input
+drawSpriteObject:
+ push ix
+ ld hl,0
+ ld h,(ix+iDataPTRH)
+ ld l,(ix+iDataPTRL)
+ ld bc,SSS
+ add hl,bc ;ptr to number
+ push hl ;ptr to sprite data
+ 
+ ld de,0
+ ld d,(ix+iDataXH)
+ ld e,(ix+iDataXL)
+ 
+ ld bc,0
+ ld b,(ix+iDataH)
+ ld c,(ix+iDataW)
+ ld a,(ix+iDataA)
+ 
+ ld hl,0
+ ld l,(ix+iDataY)
+ pop ix
+ call drawSprite
+ pop ix
  ret
  
 randsav:
@@ -1764,16 +1936,102 @@ pointsPerMini:
 pointsPerTLine:
  .db 4,8,12,16,24
  
-defaultItemInfo:
- .db   0,  0,  0,  0
- .db 160,  0,  0,  8 ;score
- .db 160,  0, 24,  3 ;level
- .db 160,  0, 48,  4 ;lines
- .db 132,  0,160,  0
- .db   0,  0,  0,  0
- .db   0,  0,  0,  0
- .db 160,  0,  160,0
-defaultItemInfoEnd:
+menuLinkData:
+ jp initGame
+ jp exit
+ ret
+
+;copies data from SSSCopiedData to SSS
+initData:
+ ld hl,SSSCopiedData
+ ld de,SSS
+ ld bc,SSSCopiedDataEnd - SSSCopiedData
+ ldir
+ ret
+ 
+SSSCopiedData:
+;these data references are pointers to pointers
+;example: 
+;ld ix,(drefSprite) ;ix points to spriteData
+;ld ix,drefSprite ;ix points to the spriteData pointer
+;load from (dref~~~~) to access relocated data
+;example:
+;dataReferences:
+;.dl SSS + 128 ;sprite data
+;...
+;ld ix,(refSprite) ;ix now points to relocated sprite data
+dataReferences:
+.dl spriteData ;std sprites like blocks, field, etc
+.dl fontData ;font data. 
+.dl characterData ;character data
+.dl bgData ;background tile data
+.dl paletteData ;palette data
+
+drefSize = 3
+drefSprite = drefSize * 0 + dataReferences - SSSCopiedData + SSS
+drefFont = drefSize * 1 + dataReferences - SSSCopiedData + SSS
+drefCharacter = drefSize * 2 + dataReferences - SSSCopiedData + SSS
+drefBackground = drefSize * 3 + dataReferences - SSSCopiedData + SSS
+drefPalette	= drefSize * 4 + dataReferences - SSSCopiedData + SSS
+
+itemsInfo:
+.db 8 ;number of items
+;FIELD INFO
+.db typeTetris
+.dw 0 ;x
+.db 0 ;y
+.db 0 ;a
+.dw 0 ;uses refSprite data ptr
+.db 10, 20 ;width, height
+;HOLD INFO
+.db typeHold
+.dw 132
+.db 160
+.db 0
+.dw 0 ;uses refSprite data ptr
+.db 4, 4 ;width, height
+;SCORE INFO
+.db typeString
+.dw 160
+.db 24
+.db 32
+.dw scoreText - SSSCopiedData ;ptr to string data
+.db 0, 0 ;unused
+;SCORE NUMBER
+.db typeNumber
+.dw 168
+.db 32
+.db 33
+.dw score - PSS ;variables are saved in PSS, data is saved in SSS
+.db 8, 0 ; size of number, unused
+;LEVEL INFO
+.db typeString
+.dw 160
+.db 48
+.db 32
+.dw levelText - SSSCopiedData
+.db typeString, 0 ;old, unused
+;LEVEL NUMBER
+.db typeNumber
+.dw 168
+.db 56
+.db 33
+.dw level - PSS
+.db 3, 0 ;size number, unused
+;LINES INFO
+.db typeString
+.dw 160
+.db 72
+.db 32
+.dw linesText - SSSCopiedData
+.db typeString, 0
+;LINES NUMBER
+.db typeNumber
+.dw 168
+.db 80
+.db 33
+.dw lines - PSS
+.db 4, 0 ;number of digits, unused
 
 scoreText:
  .db "Score:",0
@@ -1782,6 +2040,41 @@ levelText:
 linesText:
  .db "Lines:",0
 
+SSSInfo = itemsInfo - SSSCopiedData + SSS
+
+iDataType 	= 0 ;type of data (use type~ to check)
+iDataXL		= 1 ;x low byte
+iDataXH		= 2 ;x high byte
+iDataY		= 3 ;y
+iDataA		= 4 ;a (used as color/palette for most)
+iDataPTRL	= 5 ;ptr offset from SSS
+iDataPTRH	= 6 ;sorry! data must be <65536 bytes
+iDataW		= 7 ;extra data (width, # digits)
+iDataH		= 8 ;extra data 2 (height)
+iDataSize	= 9 ;size of data struct
+
+typeTetris=0
+typeString=1
+typeNumber=2
+typeSprite=3
+typeHold=4
+typePreview=5
+ 
+menuInfo = menuData - SSSCopiedData
+menuData:
+ .db typeString
+ .dw 8
+ .db 8
+ .db 32
+ .dw menuText - SSSCopiedData
+ .db 0, 0
+ 
+menuTextData:
+ .db 2
+menuText:
+ .db "START",0
+ .db "EXIT",0
+ 
  
 ;format: x ofs, y ofs, spriteID, palette
 spriteID = 8
@@ -2715,6 +3008,7 @@ numbers:
 .db 0, 0, 0, 1, 0, 0, 0, 0
 .db 0, 0, 0, 0, 0, 0, 0, 0
 .db 0, 0, 0, 0, 0, 0, 0, 0
+fontDataEnd:
 
 paletteData:
 .dw $7fff, $1CE7, $3def, $0000
@@ -2728,3 +3022,4 @@ paletteData:
 .dw $7fff, $7eb9, $7464, $4402
 .dw $7fff, $1CE7, $3def, $0000
 paletteDataEnd:
+SSSCopiedDataEnd:
