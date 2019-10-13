@@ -9,9 +9,7 @@ XT0N - hold piece
 Del - quit
 
 Known issues:
- Rotating right will sometimes cause the program to exit? Might be related to how I'm checking key input.
  Can't see upcoming pieces yet
- No lose condition, yet...
  
 Special thanks/Credits to...
  Michael - helped troubleshoot at the hackathon this was started at
@@ -20,3 +18,4 @@ Special thanks/Credits to...
  tetris.wiki, mostly tetris.wiki/SRS but also the scoring pages and stuff
  Whoever made NullPoMino, for being an inspiration of what a tetris game can be
  KermMartian for making Tetric A, a similar inspiration to NullPo but on calculator already
+ Various individuals in the cemetech discord who helped with strange bugs or advice
