@@ -41,136 +41,25 @@ SSS = saveSScreen
 
 ;main program
 main:
+ ld (preserveSP),sp
  call initLCD
  call initData
- call menu
+ call mainMenu
  
 exit:
  call resetLCD
  call restoreKeyboard
+ 
+ ld sp,(preserveSP)
  ret
 
-menuSelection:
-.db 0
- 
-menu:
- halt
- call scanKeys
- 
- ld a,(keys)
- bit kbitDel,a
- jr nz,menu ;wait for no selection
- 
- ;display menu text and stuff
- ld ix,menuTextData
- ld b,(ix+0) ;# menu items
-drawMenuLoop:
- push bc
- 
- ld ix,menuInfo
- call drawText
- ld a,(ix+iDataY)
- add a,8
- ld (ix+iDataY),a
- 
- ;this block moves the text pointer forward.
- ld hl,0
- ld l,(ix+iDataPTRL)
- ld h,(ix+iDataPTRH)
- ld de,SSS
- add hl,de ;points to text ptr
- ld a,0
-dMLFindText:
- cp (hl)
- inc hl
- jr nz,dMLFindText
- ;hl points to next text
- ld de,SSS
- or a,a ;clear carry flag
- sbc hl,de ;hl is now offset from SSS to ptr
- ld (ix+iDataPTRL),l
- ld (ix+iDataPTRH),h
- 
- pop bc
- djnz drawMenuLoop
- call copyBufferVRam
- 
-menuLoop:
- halt
- call scanKeys
- 
- ld a,(keys)
- bit kbitDel,a
- ret nz ;always an exit option
- 
- ld a,(keys+3)
- bit kbitUp,a
- call nz, menuUp
- 
- ld a,(keys+3)
- bit kbitDown,a
- call nz, menuDown
- 
- ld a,(keys+0)
- bit kbit2nd,a
- jr nz, selectedItem
- 
- ld a,(menuSelection)
- inc a
- add a,a
- add a,a
- add a,a ;y<240 still, so
- ld hl,0
- ld l,a
- ld de,0
- ld b,8
- ld c,b
- ld ix,fontData+640 ;asterisk!
- ld a,0
- push hl
- call clearSprite
- call drawSprite
- 
- call copyBufferVRam
- pop hl ;use y to clear
- ld de,0
- ld b,8
- ld c,b
- ld a,0
- call clearSprite
- jr menuLoop
+preserveSP:
+.dl 0
 
-menuUp:
- ld a,(menuSelection)
- cp 0
- ret z ;don't go past zero
- dec a
- ld (menuSelection),a
+mainMenu:
+ ld ix,(drefMenu)
+ call activeMenu
  ret
- 
-menuDown:
- ld a,(menuSelection)
- ld b,a
- ld a,(menuTextData) ;first byte is # elements
- dec a
- dec a
- cp b
- ret c ;don't go past end of list
- inc a
- ld (menuSelection),a
- ret 
- 
-selectedItem:
- ld a,(menuSelection)
- ld hl,0
- ld l,a
- add hl,hl ;2
- add hl,hl ;4s: get jump table offset
- ld de,menuLinkData
- add hl,de
-
- jp (hl)
- ret 
  
 initGame:
  ld a,0
@@ -244,24 +133,7 @@ pauseLoop:
  ret nz
  bit kbitDel, a
  ret nz
-
- ld ix, pauseText1
- ld de, 36
- ld hl, 112
- ld a,(pauseColor)
- call drawText
  
- ld ix, pauseText2
- ld de, 36
- ld hl, 120
- ld a,(pauseColor)
- call drawText
- 
- ld a,(pauseColor)
- inc a
- and $1f
- ld (pauseColor),a
-
  call copyBufferVRam
  jr pauseLoop
  
@@ -1282,28 +1154,33 @@ drawOneBlockNoGrid:
  ret
 
 drawGame:
- ;call drawField
- ;call drawCurrentMino
- ;call drawCurrentHold
- 
+ ld ix,SSSInfo
  call drawObjects
- 
- ;call drawScoreInfo
- ;call drawLevelInfo
- ;call drawLinesInfo
  
  call copyBufferVRam
  ret
-drawObjA:
- .db 0
+ 
+;input: ix = info ptr, 1st elem. is # struct elems
 drawObjects:
- ld ix,SSSInfo
+ ;ld ix,SSSInfo
  ld b,(ix)
  inc ix
 drawAllObjects:
  push bc
  push ix
  ;ix = info ptr
+ call drawObject
+ 
+ pop ix
+ ld de,iDataSize
+ add ix,de
+ pop bc
+ djnz drawAllObjects
+ ret
+ 
+;input: ix = data ptr to object
+;note: no guarantees on data ptr validity on return
+drawObject:
  ld de,0
  ld e,(ix+iDataType) ;data type is de
  
@@ -1313,27 +1190,20 @@ drawAllObjects:
  add hl,de
  add hl,de ;4type + jumps
  
- ld bc, returnToObjects
- push bc
  jp (hl)
- ;jump to different display options
- 
-returnToObjects:
- pop ix
- ld de,iDataSize
- add ix,de
- pop bc
- djnz drawAllObjects
- ret
- 
+ ret ;haha
+
+;jump table for various object types
+;all should accept ix as a pointer to data
 drawJumps:
- jp drawField
+ jp drawField ;includes current mino
  jp drawText
  jp draw24BitNumber
  jp drawSpriteObject
  jp drawCurrentHold
  jp drawPreview
  jp drawBox
+ jp drawMenu
  ret
  
 drawNullBlock:
@@ -1579,7 +1449,6 @@ drawTextColor:
 
 ;inputs: ix = data ptr
 drawText:
- push ix
  ld bc,SSS
  ld hl,0
  ld h,(ix+iDataPTRH)
@@ -1595,6 +1464,12 @@ drawText:
  ld a,(ix+iDataA) ;color
  pop ix ;this is now the string data ptr
 
+ ;must be provided:
+ ;ix - string data ptr
+ ;hl - y
+ ;de - x
+ ;a - color
+drawTextManual:
  ld (drawTextColor),a
 drawTextLoop:
  ld a,(ix)
@@ -1631,12 +1506,17 @@ drawTextLoop:
  inc ix
  jr drawTextLoop
 textLoopEnd:
- pop ix ;restore ix to data ptr
+ ;de is the ending X location
+ ;hl is unchanged
+ ;ix points to 0 at end of string
+ ;a is 0
  ret
  
 ;inputs: ix = data struct
 draw24Saved:
- .db 0,0,0
+.dl 0
+d24NColor:
+.db 0
 draw24BitNumber:
  push ix
  ld hl,0
@@ -1659,6 +1539,8 @@ draw24BitNumber:
  ld d,(ix+iDataXL)
  ld e,(ix+iDataY)
  ld b,(ix+iDataW)
+ ld a,(ix+iDataA)
+ ld (d24NColor),a
  ld (draw24Saved),de
 d24bnLoop:
  push bc
@@ -1698,9 +1580,7 @@ d24bnLoop:
  pop de ;de=x
  pop hl ;restore l=y
  ld bc, $0808
- ld a,0
- call clearSprite
- ld a,32
+ ld a,(d24NColor)
  call drawSprite
  pop hl
  pop bc
@@ -1733,6 +1613,241 @@ drawSpriteObject:
  call drawSprite
  pop ix
  ret
+ 
+;ix is ptr to input data
+drawBox:
+ ld de,0
+ ld d,(ix+iDataXH)
+ ld e,(ix+iDataXL)
+ ld hl,0
+ ld l,(ix+iDataY)
+
+ push de
+ ld h,0
+ ld d,h ;save HL = Y
+ ld e,l
+ add hl,hl ;2y
+ add hl,hl ;4y
+ add hl,de ;5y
+ add hl,hl ;10y
+ add hl,hl ;20y
+ add hl,hl ;40y
+ add hl,hl ;80y
+ add hl,hl ;160y
+ add hl,hl ;320y
+ pop de
+ add hl,de ;320Y+X
+ ld de, vRamSplit ;to second half of vRam, for double-buffering
+ add hl,de ;320Y+x+vRam
+ 
+ ld de,320
+ ld b,(ix+iDataH)
+drawBoxYLoop:
+ push bc
+ ;check if y is max or 0
+ ld a,b
+ cp (ix+iDataH)
+ jr z,isBorder
+ cp 1
+ jr z,isBorder
+ ld a,(ix+iDataA)
+drawBorderReturn:
+ ld bc,0
+ ld b,(ix+iDataPTRH)
+ ld c,(ix+iDataPTRL)
+ push hl ;save ptr to graph
+drawBoxX:
+ push hl
+ pop de ;de = ptr to graph
+ inc de ;hl=gptr, de=gptr+1
+ ;bc is width of box
+ ld (hl),a
+ ldir
+ ;end of drawBoxX
+ ld a,(ix+iDataW) ;border color
+ ld (hl),a
+ pop hl ;restore old gptr
+ ld a,(ix+iDataW) ;border color
+ ld (hl),a
+ 
+ ld de,320
+ add hl,de ;move down 1 y unit
+ pop bc
+ djnz drawBoxYLoop
+ ret
+isBorder:
+ ld a,(ix+iDataW)
+ jr drawBorderReturn
+ 
+;ix = data ptr input
+;intended to perform initial draw of menu data
+;output: ix = beginning of jumps/end of menu text
+drawMenu:
+ ld b,(ix+iDataW)
+ 
+ ld hl,0
+ ld h,(ix+iDataPTRH)
+ ld l,(ix+iDataPTRL)
+ ld de,SSS
+ add hl,de ;hl points to text data of menu
+ push hl
+ 
+ ld b,(ix+iDataW) ; # items
+ ld hl,0
+ ld l,(ix+iDataY)
+ ld de,0
+ ld d,(ix+iDataXH)
+ ld e,(ix+iDataXL) ;de, hl is (X,Y) coords
+ 
+ ld a,(ix+iDataA)
+ pop ix ;points to text data
+drawMenuItems:
+ push bc
+ push de ;x value
+ push af ;color value
+ call drawTextManual
+ inc ix
+ ld a,8
+ add a,l
+ ld l,a ;add 8 to y value
+ pop af ;restore color value
+ pop de ;restore old x value
+ 
+ pop bc
+ djnz drawMenuItems
+ ;ix should point to just past end of text data
+ ret
+
+menuSelection:
+.db 0
+menuDataPTR:
+.dl 0
+menuPTR:
+.dl 0
+cursorPTR:
+.dl 0
+ 
+;input:
+;ix is ptr to active display menudata
+activeMenu:
+ ld (menuDataPTR),ix
+ inc ix ;go past # elements
+ 
+ ;scan for typeMenu and read for data
+ ld de,iDataSize
+menuScanMenu:
+ ld a,(ix+iDataType)
+ add ix,de
+ cp typeMenu
+ jr nz,menuScanMenu
+ ld de,-iDataSize
+ add ix,de ;ix - iDataSize
+ ;ix points to a typeMenu object
+ ld (menuPTR),ix
+ 
+ ld b,(ix+iDataW) ;# text items
+ ld hl,0
+ ld h,(ix+iDataPTRH)
+ ld l,(ix+iDataPTRL)
+ ld de,SSS
+ add hl,de ;hl=ptr to text
+scanToMenuJumps:
+ ld a,(hl)
+ inc hl
+ cp 0
+ jr nz,scanToMenuJumps ;jump no dec if not end of string
+ djnz scanToMenuJumps
+ ;hl points to jump table
+ ld (smcLoadJumpTable+1),hl
+ 
+ ld b,(ix+iDataH)
+ ld c,iDataSize
+ mlt bc ;bc=size*cursorelemid
+ ld hl,(menuDataPTR)
+ inc hl
+ add hl,bc ;hl=ix+size*cursorID or, offset to cursor data
+ ld (cursorPTR),hl
+ 
+menuWaitNoInput:
+ call scanKeys
+ 
+ ld a,(keys)
+ bit kbitDel,a
+ jr nz,menuWaitNoInput ;wait for no selection
+ jr menuDraw
+  
+menuLoop:
+ call scanKeys
+ 
+ ld a,(keys)
+ bit kbit2nd,a
+ jr nz,menuSelect
+ 
+ ld a,(keys+3)
+ bit kbitUp,a
+ jr nz,menuUp
+ 
+ ld a,(keys+3)
+ bit kbitDown,a
+ jr nz,menuDown
+ 
+ ld a,(keys)
+ bit kbitDel,a
+ jp nz,exit
+ jr menuLoop ;only redraw if something happens
+
+menuDraw:
+ ;draw active items
+ ld a,(menuSelection)
+ add a,a
+ add a,a
+ add a,a ;8*selection
+ ld ix,(menuPTR) ;ix points to cursor struct
+ add a,(ix+iDataY) ;menuY + selection ofs
+ ld ix,(cursorPTR)
+ ld (ix+iDataY),a ;save y value to cursor
+ 
+ ld ix,(menuDataPTR)
+ call drawObjects
+ call copyBufferVRam
+ 
+ jr menuLoop
+ 
+menuUp:
+ ld a,(menuSelection)
+ cp 0
+ jr z, menuDraw ;don't go past zero
+ dec a
+ ld (menuSelection),a
+ jr menuDraw
+ 
+menuDown:
+ ld a,(menuSelection)
+ ld b,a
+ ld ix,(menuPTR)
+ ld a,(ix+iDataW)
+ dec a
+ dec a
+ cp b
+ jr c, menuDraw ;don't go past end of list
+ inc a
+ ld (menuSelection),a
+ jr menuDraw
+ 
+menuSelect:
+ ld de,0
+ ld a,(menuSelection)
+ ld e,a
+ 
+smcLoadJumpTable:
+ ld hl,$000000 ;this will be replaced
+ add hl,de
+ add hl,de
+ add hl,de
+ add hl,de
+ 
+ jp (hl)
+ ret ;ha
  
 randsav:
  .db 0,0,0,0
@@ -1935,11 +2050,6 @@ pointsPerMini:
  .db 1,2,4 
 pointsPerTLine:
  .db 4,8,12,16,24
- 
-menuLinkData:
- jp initGame
- jp exit
- ret
 
 ;copies data from SSSCopiedData to SSS
 initData:
@@ -1966,16 +2076,44 @@ dataReferences:
 .dl characterData ;character data
 .dl bgData ;background tile data
 .dl paletteData ;palette data
+.dl menuObjData ;menu data
+.dl pauseData
+.dl itemsInfo ;ptr to item info for display in game
 
 drefSize = 3
-drefSprite = drefSize * 0 + dataReferences - SSSCopiedData + SSS
-drefFont = drefSize * 1 + dataReferences - SSSCopiedData + SSS
-drefCharacter = drefSize * 2 + dataReferences - SSSCopiedData + SSS
-drefBackground = drefSize * 3 + dataReferences - SSSCopiedData + SSS
-drefPalette	= drefSize * 4 + dataReferences - SSSCopiedData + SSS
+drefOfs = dataReferences - SSSCopiedData + SSS
+
+drefSprite = drefSize * 0 + drefOfs
+drefFont = drefSize * 1 + drefOfs
+drefCharacter = drefSize * 2 + drefOfs
+drefBackground = drefSize * 3 + drefOfs
+drefPalette	= drefSize * 4 + drefOfs
+drefMenu = drefSize * 5 + drefOfs
+drefPause = drefSize * 6 + drefOfs
+
+;various equates for itemsInfo
+iDataType 	= 0 ;type of data (use type~ to check)
+iDataXL		= 1 ;x low byte
+iDataXH		= 2 ;x high byte
+iDataY		= 3 ;y
+iDataA		= 4 ;a (used as color/palette for most)
+iDataPTRL	= 5 ;ptr offset from SSS
+iDataPTRH	= 6 ;sorry! data must be <65536 bytes
+iDataW		= 7 ;extra data (width, # digits)
+iDataH		= 8 ;extra data 2 (height)
+iDataSize	= 9 ;size of data struct
+
+typeTetris=0
+typeString=1
+typeNumber=2
+typeSprite=3
+typeHold=4
+typePreview=5
+typeBox=6
+typeMenu=7
 
 itemsInfo:
-.db 8 ;number of items
+.db 9 ;number of items
 ;FIELD INFO
 .db typeTetris
 .dw 0 ;x
@@ -1990,6 +2128,13 @@ itemsInfo:
 .db 0
 .dw 0 ;uses refSprite data ptr
 .db 4, 4 ;width, height
+;BACKGROUND BOX INFO
+.db typeBox
+.dw 152 ;x
+.db 16 ;y
+.db 14 ;color of main
+.dw 96 ;width
+.db 15,72 ;bordercolor, height
 ;SCORE INFO
 .db typeString
 .dw 160
@@ -2041,40 +2186,39 @@ linesText:
  .db "Lines:",0
 
 SSSInfo = itemsInfo - SSSCopiedData + SSS
-
-iDataType 	= 0 ;type of data (use type~ to check)
-iDataXL		= 1 ;x low byte
-iDataXH		= 2 ;x high byte
-iDataY		= 3 ;y
-iDataA		= 4 ;a (used as color/palette for most)
-iDataPTRL	= 5 ;ptr offset from SSS
-iDataPTRH	= 6 ;sorry! data must be <65536 bytes
-iDataW		= 7 ;extra data (width, # digits)
-iDataH		= 8 ;extra data 2 (height)
-iDataSize	= 9 ;size of data struct
-
-typeTetris=0
-typeString=1
-typeNumber=2
-typeSprite=3
-typeHold=4
-typePreview=5
  
-menuInfo = menuData - SSSCopiedData
-menuData:
- .db typeString
+menuInfo = menuObjData - SSSCopiedData
+
+menuObjData:
+ .db 3
+ ;background
+ .db typeBox
+ .dw 0 ;x
+ .db 0 ;y
+ .db 5 ;color
+ .dw 64 ;width
+ .db 6, 32 ;bordercolor, height
+ ;menu text
+ .db typeMenu
  .dw 8
  .db 8
  .db 32
  .dw menuText - SSSCopiedData
- .db 0, 0
+ .db 2, 2 ;# items, cursorID within menuObjData
+ ;cursor
+ .db typeSprite
+ .dw 0
+ .db 8 
+ .db 32
+ .dw fontData - SSSCopiedData + 640
+ .db 8, 8
  
-menuTextData:
- .db 2
 menuText:
  .db "START",0
  .db "EXIT",0
- 
+menuJumps:
+ jp initGame
+ jp exit
  
 ;format: x ofs, y ofs, spriteID, palette
 spriteID = 8
