@@ -62,8 +62,11 @@ mainMenu:
  ret
  
 initGame:
- ld a,0
+ ld a,1
  ld (level),a
+ ld a,0
+ ld (lines),a
+ 
  ld a,7
  ld (holdT),a
  
@@ -134,7 +137,7 @@ pauseLoop:
  bit kbitDel, a
  ret nz
  
- call copyBufferVRam
+ call swapVRamPTR
  jr pauseLoop
  
  ret
@@ -178,6 +181,17 @@ firstHold:
  call newBlock ;geneate a new block: nothing to load
  ret
  
+dropMultiple:
+ ld a,(level)
+ sub 9
+ ld b,a
+dropAllTimes:
+ push bc
+ call checkBlockDown
+ pop bc
+ djnz dropAllTimes
+ jr dropReturn
+ 
 update:
  ld hl,(timerT)
  inc hl
@@ -186,13 +200,23 @@ update:
  ;calculate gravity
  ld b,l ;current time
  ld a, (level)
- add a,a
- add a,a
- ld l, a ;l=2*level
- ld a, 60
- sub l ;60 - level
+ ld l, a ;l=level
+ ld a, 10
+ sub l ;10 - level
+ jr z, dropMultiple
+ jr c, dropMultiple
  cp b
  jr c, drop
+
+ ld a,(keys+3)
+ bit kbitDown,a
+ jr nz, userdrop
+ ld a,(keys+3)
+ bit kbitUp, a
+ jr nz, harddrop
+dropReturn:
+ 
+ ;check if lock
  ld a,(lockTimer)
  cp LOCK_DISABLE
  jr z, skipLockCheck
@@ -202,12 +226,6 @@ update:
  jr z, lock
  ret
 skipLockCheck:
- ld a,(kbdG7)
- bit kbitDown,a
- jr nz, userdrop
- ld a,(kbdG7)
- bit kbitUp, a
- jr nz, harddrop
  ret
 
 hardDrop:
@@ -215,7 +233,7 @@ hardDrop:
  bit rbitHardDropEnabled,(ix+0)
  ret z ;hard drop is disabled
 
-hardDropLoop
+hardDropLoop:
  ld a,(lockTimer)
  cp LOCK_DISABLE
  jr nz, hdrop ;lock not disabled
@@ -224,12 +242,12 @@ hardDropLoop
  inc hl
  ld (score),hl
  ld hl,0
- ld (timerT),hl
  call checkBlockDown
  jr hardDropLoop
 hdrop:
- ld a,5
- ld (lockTimer),a ;lock enabled for 5 frames
+ ld a,1
+ ld (lockTimer),a
+ jr dropReturn
  ret
  
 userDrop:
@@ -243,7 +261,7 @@ drop:
  ld hl,0
  ld (timerT),hl
  call checkBlockDown
- ret
+ jr dropReturn
  
 lock:
  ld a,-1
@@ -281,7 +299,6 @@ gameEnd:
  ld ix,rules
  res rBitGameCont, (ix+0) ;game is not going
  ret
-
  
 checkLines:
  ld a,0
@@ -388,7 +405,11 @@ newBlock:
  ld a,0
  ld (curY),a
  ld (curR),a
+ ld (timerT),a
+
+ ld a,LOCK_DISABLE
  ld (lockTimer),a
+ 
  call getNextBagItem
  ld (curT),a
  ld ix,blockData
@@ -470,10 +491,10 @@ checkBlocksInLeft:
  ld (curX),a
  
  ;check if block needs lock
+blockTooFarLeft:
  ld a, LOCK_DISABLE
  ld (lockTimer),a
  call checkBlockDownOK
-blockTooFarLeft:
  ret
 
 lineKickLeft:
@@ -564,10 +585,6 @@ rotateBlocksLeft:
  djnz rotateBlocksLeft
  pop hl
  
- ld a, -1
- ld (lockTimer),a
- call checkBlockDownOK
- 
  ld a,(curR)
  dec a
  and $03
@@ -577,6 +594,10 @@ rotateBlocksLeft:
  ld (curX),a
  ld a,(rY) ;save the location of the successful turn.
  ld (curY),a
+ 
+ ld a, LOCK_DISABLE
+ ld (lockTimer),a
+ call checkBlockDownOK
  ret
 noRotationLeft:
  pop hl ;get offset
@@ -599,6 +620,9 @@ noRotationLeft:
  jp nz, checkBlocksRotateLeft
 
  pop hl ;unneeded.
+ ld a, LOCK_DISABLE
+ ld (lockTimer),a
+ call checkBlockDownOK
  ret
  
 rotationTempHL:
@@ -727,10 +751,6 @@ rotateBlocksRight:
  djnz rotateBlocksRight
  pop hl ;unneeded next kick ofs
  
- ld a, -1
- ld (lockTimer),a
- call checkBlockDownOK
- 
  ld a,(curR) ;increment angle
  inc a
  and $03 ;keep in bounds
@@ -740,6 +760,10 @@ rotateBlocksRight:
  ld (curX),a
  ld a,(rY) ;save the location of the successful turn.
  ld (curY),a
+ 
+ ld a, LOCK_DISABLE
+ ld (lockTimer),a
+ call checkBlockDownOK
  ret
 noRotationRight:
  pop hl ;get offset
@@ -762,6 +786,9 @@ noRotationRight:
  jp nz, checkBlocksRotateRight
  
  pop hl ;unneeded.
+ ld a, LOCK_DISABLE
+ ld (lockTimer),a
+ call checkBlockDownOK
  ret
  
 checkMoveRight:
@@ -801,10 +828,10 @@ checkBlocksInRight:
  ld (curX),a
  
  ;check if still needs lock timer
+blockTooFarRight:
  ld a, LOCK_DISABLE
  ld (lockTimer),a
  call checkBlockDownOK
-blockTooFarRight:
  ret
 
 ;checks if the block CAN move down AND moves the block if it can.
@@ -853,7 +880,7 @@ checkBlocksInDown:
 
 blockTooFarDown:
  ld a,(lockTimer)
- cp -1
+ cp LOCK_DISABLE
  jr nz,noLockRefresh
  ld a,10
  ld (lockTimer),a
@@ -933,6 +960,10 @@ initLCD:
 
 ;return lcd to normal state (bpp16)
 resetLCD:
+;set default vram ptr
+ ld hl,vRam
+ ld (mpLcdUpbase),hl
+ 
  ld a, lcdBpp16
  ld ($e30018), a
  call _ClrLCDFull
@@ -940,11 +971,18 @@ resetLCD:
  ret
 
 ;sprite routine draws to vram + (vRamEnd - vRam)/2. this copies from that address to vRam. 
-copyBufferVRam:
- ld hl, vRamSplit
- ld de, vRam
- ld bc, vRamSplitSize
- ldir
+vramOnPtr:
+ .dl vRam
+vramOffPtr:
+ .dl vRamSplit
+ 
+swapVRamPTR:
+ ld hl,(vramOnPtr)
+ ld de,(vramOffPtr)
+ ld (vramOnPtr),de
+ ld (vramOffPtr),hl
+ 
+ ld (mpLcdUpbase),de
  ret
  
 ;input:
@@ -1019,7 +1057,7 @@ drawSprite:
  add hl,hl ;320y
  pop de
  add hl,de ;320Y+X
- ld de, vRamSplit ;to second half of vRam, for double-buffering
+ ld de, (vramOffPtr) ;to second half of vRam, for double-buffering
  add hl,de ;320Y+x+vRam
 ;hl=vramptr ix=data b=sizeY c=sizeX
 putSpriteYLoop:
@@ -1157,7 +1195,7 @@ drawGame:
  ld ix,SSSInfo
  call drawObjects
  
- call copyBufferVRam
+ call swapVRamPTR
  ret
  
 ;input: ix = info ptr, 1st elem. is # struct elems
@@ -1637,7 +1675,7 @@ drawBox:
  add hl,hl ;320y
  pop de
  add hl,de ;320Y+X
- ld de, vRamSplit ;to second half of vRam, for double-buffering
+ ld de, (vramOffPtr)
  add hl,de ;320Y+x+vRam
  
  ld de,320
@@ -1809,7 +1847,7 @@ menuDraw:
  
  ld ix,(menuDataPTR)
  call drawObjects
- call copyBufferVRam
+ call swapVRamPTR
  
  jr menuLoop
  
@@ -1886,6 +1924,8 @@ initBag:
 ;hl= ptr to bag to fill 
 randBagPtr:
  .db 0,0,0 ;save ptr to bag here
+randCountFail:
+ .db 0
 randFillBag: 
  ld b,7
  ld (randBagPtr),hl
@@ -2113,12 +2153,12 @@ typeBox=6
 typeMenu=7
 
 itemsInfo:
-.db 9 ;number of items
+.db 10 ;number of items
 ;FIELD INFO
 .db typeTetris
 .dw 0 ;x
 .db 0 ;y
-.db 0 ;a
+.db 0 ;a (does nothing?)
 .dw 0 ;uses refSprite data ptr
 .db 10, 20 ;width, height
 ;HOLD INFO
@@ -2144,7 +2184,7 @@ itemsInfo:
 .db 0, 0 ;unused
 ;SCORE NUMBER
 .db typeNumber
-.dw 168
+.dw 160
 .db 32
 .db 33
 .dw score - PSS ;variables are saved in PSS, data is saved in SSS
@@ -2158,7 +2198,7 @@ itemsInfo:
 .db typeString, 0 ;old, unused
 ;LEVEL NUMBER
 .db typeNumber
-.dw 168
+.dw 160
 .db 56
 .db 33
 .dw level - PSS
@@ -2172,11 +2212,18 @@ itemsInfo:
 .db typeString, 0
 ;LINES NUMBER
 .db typeNumber
-.dw 168
+.dw 160
 .db 80
 .db 33
 .dw lines - PSS
 .db 4, 0 ;number of digits, unused
+;DEBUG TEXT
+.db typeNumber
+.dw 204
+.db 80
+.db 32
+.dw timerT - PSS
+.db 3, 0
 
 scoreText:
  .db "Score:",0
