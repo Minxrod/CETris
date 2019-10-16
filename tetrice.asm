@@ -1326,9 +1326,7 @@ dmOX:
  .db 0,0
 dmOY:
  .db 0
-dmOE:
- .db 0
- 
+
 drawCurrentHold:
  push ix ;save data ptr
  ld ix,rules
@@ -1448,6 +1446,8 @@ drawMinoBlocks:
  ld l,a
  ld a,(de) ;x+ofsx
  add a,l
+ cp (ix+iDataW)
+ jr nc,skipDrawBlock
  ld l,a
  ld h,12
  mlt hl ;12x
@@ -1464,20 +1464,25 @@ drawMinoBlocks:
  ld a,(dmY)
  ld l,a
  ld a,(de)
+ inc de
+ ld (drawMinoTempDE),de
  add a,l
+ pop bc ;stack dancing
+ cp (ix+iDataH)
+ jr nc,skipDrawBlock
+ push bc ;around a skip
  ld l,a
  ld h,12
  mlt hl ;12x
- ld a,(dmOX+2) ;hmm
+ ld a,(dmOY) ;hmm
  add a,l
  ld l,a ;hl=y location
- inc de
- ld (drawMinoTempDE),de
  pop de ;de=x location
  
  push ix
  call drawOneBlockNoGrid
  pop ix
+skipDrawBlock:
  pop bc
  djnz drawMinoBlocks
  ret
