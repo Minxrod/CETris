@@ -13,19 +13,47 @@ vRamSplit = vRam + vRamSplitSize
 ;variables and memory regions
 PSS = plotSScreen
 field = PSS
+
+blockDataSize = 10
+
+;current status bits
+csLockedBit = 0    ;locked block bit
+csNewBlockBit = 1  ;prev. frame requests new block
+
 holdT= PSS + 256
-curX = PSS + 266
-curY = PSS + 267
-curR = PSS + 268
-curT = PSS + 269
-timerT = PSS + 270 ;to 272
-lockTimer = PSS + 273
-curPAL = PSS + 274
-curBAG = PSS + 275
-curBlock = PSS + 276
-score = PSS + 300 ;to 302: max score is 16777216
-level = PSS + 304
-lines = PSS + 308 
+;current mino data
+curData = PSS + 266
+curX = curData + 0
+curY = curData + 1
+curR = curData + 2
+curT = curData + 3
+curStatus = curData + 4
+curBlock = curData + 5 ;size: 10
+curDataSize = curBlock + blockDataSize - curX
+
+;inbetween cur and old is a middle data chunk
+;used to handle intermediate frames due to
+;double-buffer
+;note: should not actually be used, probably?
+midOfs = curDataSize
+midData = midOfs + curData
+
+;saves data from previous frame here
+oldOfs = 2 * midOfs ;alt. 2 * curDataSize
+oldData = oldOfs + curData
+
+oldX = oldOfs + curX
+oldY = oldOfs + curY
+oldR = oldOfs + curR
+oldT = oldOfs + curT
+oldBlock = oldOfs + curBlock
+
+score = PSS + 320
+level = PSS + 324
+lines = PSS + 328 
+timerT = PSS + 332
+lockTimer = PSS + 336
+
 
 rules = PSS + 512
 rbitGameCont = 0
@@ -38,6 +66,12 @@ rbitHardDropEnabled =5
 ;graphical and data resources
 ;note: info must be RELOCATED to this location.
 SSS = saveSScreen
+
+;bit set/reset when an object must be updated
+redrawObjBit = 7
+;use in data to set an object to draw once
+;guaranteed from the data before being set to 0.
+drawInitial = 128 
 
 ;main program
 main:
@@ -86,37 +120,73 @@ initGame:
  call initBag
  call newBlock
  
+ ;first draw to set up screen
+ ld ix,SSSInfo
+ call resetAllDrawCheck
+ ld ix,SSSInfo
+ call drawObjects
+ call swapVRamPTR
+ ld ix,SSSInfo
+ call resetAllDrawCheck
+ ld ix,SSSInfo
+ call drawObjects
+ 
 game:
  call scanKeys
- 
- ld a,(keys+3)
- bit kbitLeft, a
- call nz, checkMoveLeft
- ld a,(keys+3)
- bit kbitRight, a
- call nz, checkMoveRight
- ld a,(keys+0)
- bit kbit2nd, a
- call nz, checkRotationLeft
- ld a,(keys+1)
- bit kbitAlpha, a
- call nz, checkRotationRight
- ld a,(keys+2)
- bit kbitGraphVar, a
- call nz, hold
- ;check exit/pause
- ld a,(keys+0)
- bit kbitMode, a
- call nz, pause
  ld a,(keys+0)
  bit kbitDel, a
  ret nz
+ 
+ call shiftOldData
+ ;part of update code, essentially
+ ;might move to update sometime
+ call userUpdate
  call update
  call drawGame
  
  ld ix,rules
  bit rBitGameCont, (ix+0)
- jp nz, game ;jump if nz: bit is 1, game is going
+ jr nz, game ;jump if nz: bit is 1, game is going
+ ret
+
+shiftOldData:
+ ;copy old mino data
+ ;to use for clearing old draws
+ ld hl, midData
+ ld de, oldData
+ ld bc, curDataSize
+ ldir
+ 
+ ld hl, curData
+ ld de, midData
+ ld bc, curDataSize
+ ldir
+ ret
+ 
+userUpdate:
+ ld a,(keys+3)
+ bit kbitLeft, a
+ call nz, checkMoveLeft
+ 
+ ld a,(keys+3)
+ bit kbitRight, a
+ call nz, checkMoveRight
+ 
+ ld a,(keys+0)
+ bit kbit2nd, a
+ call nz, checkRotationLeft
+ 
+ ld a,(keys+1)
+ bit kbitAlpha, a
+ call nz, checkRotationRight
+ 
+ ld a,(keys+2)
+ bit kbitGraphVar, a
+ call nz, hold
+ 
+ ld a,(keys+0)
+ bit kbitMode, a
+ call nz, pause
  ret
  
 pause:
@@ -193,6 +263,10 @@ dropAllTimes:
  jr dropReturn
  
 update:
+ ld hl, curStatus + midOfs ;last frame status
+ bit csNewBlockBit, (hl) ;request new block
+ call nz, newBlock ;if set, create block
+ 
  ld hl,(timerT)
  inc hl
  ld (timerT),hl
@@ -200,9 +274,10 @@ update:
  ;calculate gravity
  ld b,l ;current time
  ld a, (level)
+ add a,a
  ld l, a ;l=level
- ld a, 10
- sub l ;10 - level
+ ld a, 60
+ sub l ;60 - level
  jr z, dropMultiple
  jr c, dropMultiple
  cp b
@@ -224,10 +299,8 @@ dropReturn:
  ld (lockTimer),a
  cp 0
  jr z, lock
- ret
 skipLockCheck:
  ret
-
 hardDrop:
  ld ix,rules
  bit rbitHardDropEnabled,(ix+0)
@@ -264,7 +337,7 @@ drop:
  jr dropReturn
  
 lock:
- ld a,-1
+ ld a,LOCK_DISABLE
  ld (lockTimer),a
  ld hl, curBlock
  ld b,4
@@ -288,11 +361,20 @@ lockAllBlocks:
  inc hl
  pop bc
  djnz lockAllBlocks
+ 
+ ld hl, curStatus
+ set csLockedBit,(hl) ;this is the lock frame.
+ ;since it locks here, do not clear block when drawn.
  call checkLines ;only check line clears after a lock
- call newBlock
- call checkBlockDownOK
- cp 0
- jr z,gameEnd
+ 
+ ;call newBlock
+ ld hl, curStatus
+ set csNewBlockBit,(hl) ;new block should be created
+ ;
+ 
+ ;call checkBlockDownOK
+ ;cp 0
+ ;jr z,gameEnd
  ;if block check fails immediately, it's a top out
  ret
 gameEnd:
@@ -328,6 +410,12 @@ noIncrementE:
  
  ;add to lines cleared
  ld a,(linesClear)
+ cp 0
+ jr noLinesClear
+ ;must redraw field
+ ld ix, (refField)
+ res redrawObjBit, (ix + iDataType)
+ 
  ld de,0
  ld e,a ;de is lines cleared
  ld hl,(lines)
@@ -366,6 +454,8 @@ noIncrementE:
  call _DivHLbyA
  inc hl
  ld (level),hl
+noLinesClear:
+;all of the above do not update when not cleared.
  ret
  
 clearLine:
@@ -405,6 +495,7 @@ newBlock:
  ld a,0
  ld (curY),a
  ld (curR),a
+ ld (curStatus),a
  ld (timerT),a
 
  ld a,LOCK_DISABLE
@@ -422,7 +513,6 @@ newBlock:
  ld e,a
  add ix, de
  ld a,(ix+spritePAL)
- ld (curPAL),a
  ld a,(curT) ;ensure copied blockdata is CORRECT?
  call copyBlockData
  ret
@@ -435,6 +525,7 @@ determinedBlock:
  ld a,0
  ld (curY),a
  ld (curR),a
+ ld (curStatus),a
  ld (lockTimer),a
  pop af
  ld (curT),a
@@ -448,7 +539,6 @@ determinedBlock:
  ld e,a
  add ix, de
  ld a,(ix+spritePAL)
- ld (curPAL),a
  ld a,(curT) ;ensure copied blockdata is CORRECT?
  call copyBlockData
  ret
@@ -970,19 +1060,23 @@ resetLCD:
  call _DrawStatusBar
  ret
 
-;sprite routine draws to vram + (vRamEnd - vRam)/2. this copies from that address to vRam. 
+;swaps ptrs between two vram buffers.
+;this is for double-buffering and preventing
+;flicker/tears/etc.
 vramOnPtr:
  .dl vRam
 vramOffPtr:
  .dl vRamSplit
  
 swapVRamPTR:
+ ld de,(vramOffPtr)
+ ld (mpLcdUpbase),de
+ 
+swapVRamPTRNoDisp:
  ld hl,(vramOnPtr)
  ld de,(vramOffPtr)
  ld (vramOnPtr),de
  ld (vramOffPtr),hl
- 
- ld (mpLcdUpbase),de
  ret
  
 ;input:
@@ -1086,28 +1180,29 @@ transPixel:
  ret
 
 drawHeldMino:
- ld d,a ;save d for later
- push hl
- ld hl, blockData
- add a,a ;x2
- add a,a ;x4
- add a,d ;x5
- add a,a ;x10
- ld de,0
- ld e,a ;de = offset from blockData
- add hl, de ;block data ptr
- push hl
- ld de,spriteID
- add hl,de
- ld a, (hl)
- ld (tSpriteID),a
- inc hl ;block data + id + pal
- ld a, (hl)
- ld (tSpritePAL),a
- ld b,4
- pop de ;bdptr
- pop hl ;coords
- jp drawAllBlocks
+ ld a,(holdT)
+ ;ld d,a ;save d for later
+ ;push hl
+ ;ld hl, blockData
+ ;add a,a ;x2
+ ;add a,a ;x4
+ ;add a,d ;x5
+ ;add a,a ;x10
+ ;ld de,0
+ ;ld e,a ;de = offset from blockData
+ ;add hl, de ;block data ptr
+ ;push hl
+ ;ld de,spriteID
+ ;add hl,de
+ ;ld a, (hl)
+ ;ld (tSpriteID),a
+ ;inc hl ;block data + id + pal
+ ;ld a, (hl)
+ ;ld (tSpritePAL),a
+ ;ld b,4
+ ;pop de ;bdptr
+ ;pop hl ;coords
+ ;;jp drawMino ;not needed because structure
  
 ;inputs:
 ; h=x (in grid tiles)
@@ -1195,7 +1290,34 @@ drawGame:
  ld ix,SSSInfo
  call drawObjects
  
+ ;draws to 2 frame old off-frame
+ ld hl, curStatus + oldOfs
+ bit csLockedBit, (hl)
+ jr nz, setLockedBlock
+
+ ld ix,(refField)
+ call nullPreviousFrameMino
+ ;replaces with *new* current frame
+ ld ix,(refField)
+ call drawCurrentMino
+ 
  call swapVRamPTR
+ ret
+ 
+setLockedBlock:
+ ld ix,(refField)
+ ld hl,oldData
+ call drawMinoFromPTR
+ call swapVRamPTRNoDisp
+ ld ix,(refField)
+ ld hl,oldData
+ call drawMinoFromPTR
+ call swapVRamPTRNoDisp
+ 
+ ld ix,(refField)
+ call drawCurrentMino
+ 
+ call swapVRamPTR ;new block drawn to both buffers
  ret
  
 ;input: ix = info ptr, 1st elem. is # struct elems
@@ -1205,32 +1327,50 @@ drawObjects:
  inc ix
 drawAllObjects:
  push bc
- push ix
  ;ix = info ptr
  call drawObject
  
- pop ix
  ld de,iDataSize
  add ix,de
  pop bc
  djnz drawAllObjects
  ret
+
+;ix = info ptr, 
+resetAllDrawCheck:
+ ld b,(ix)
+ inc ix
+ ld de,iDataSize
+resAllObjects:
+ res redrawObjBit, (ix+iDataType)
+ add ix,de
+ djnz resAllObjects
+ ret
  
 ;input: ix = data ptr to object
 ;note: no guarantees on data ptr validity on return
 drawObject:
+ push ix
+ call drawObjectJump
+ pop ix
+ ;cleanup from drawing object
+ set redrawObjBit, (ix+iDataType)
+ 
+ ret
+ 
+drawObjectJump:
  ld de,0
- ld e,(ix+iDataType) ;data type is de
+ ld e, (ix+iDataType) ;e is data type
+ sla e ;shifts last bit into carry and doubles e
+ ret c ;bit is set = don't draw. 
  
  ld hl,drawJumps
- add hl,de
- add hl,de
- add hl,de
- add hl,de ;4type + jumps
+ add hl,de ;jumps + 2e
+ add hl,de ;jumps + 4e (since e is already x2 from sla e)
  
  jp (hl)
- ret ;haha
-
+ ret ;implied return from any of the jump methods
+ 
 ;jump table for various object types
 ;all should accept ix as a pointer to data
 drawJumps:
@@ -1242,7 +1382,7 @@ drawJumps:
  jp drawPreview
  jp drawBox
  jp drawMenu
- ret
+ ret ;this one is just aesthetic
  
 drawNullBlock:
  ld a,0
@@ -1303,8 +1443,28 @@ drawNullBlockReturn:
  ;l  = 12ygrid+lofsy
  ;tSprite stuff is OK
  push ix ;preserve info ptr
+ ;following code is transparency fix
+ ;not in use because it lags pretty badly
+ ;ld a,(tSpriteID)
+ ;ld b,a
+ ;ld a,(tSpritePAL)
+ ;ld c,a
+ ;ld a,0
+ ;ld (tSpriteID),a
+ ;ld (tSpritePAL),a
+ ;push bc ;tSprite info
+ ;push hl ;y location
+ ;push de ;x location
+ ;call drawOneBlockNoGrid
+ ;pop de
+ ;pop hl
+ ;pop bc
+ ;ld a,b
+ ;ld (tSpriteID),a
+ ;ld a,c
+ ;ld (tSpritePAL),a
  call drawOneBlockNoGrid
- pop ix ;for saving data
+ pop ix ;restore info ptr
 skipBlockDraw:
  pop bc
  djnz drawFieldX
@@ -1314,6 +1474,15 @@ skipBlockDraw:
  push ix
  call drawCurrentMino
  pop ix
+ ret
+
+;only draws the topmost row of the game field
+;to be used after a line clear
+;note: still requires a pointer to the field data
+;since it just calls drawField but with height=1
+drawFieldTop:
+ ld b,1
+ jr drawFieldY
  ret
  
 drawMinoTempDE:
@@ -1408,31 +1577,65 @@ drawHoldX:
 
  pop de ;bdptr
  jr drawAnyMino
+
+;inputs:
+;ix = obj data ptr
+;hl = ptr to curxy etc.
+
+drawMinoFromPTR:
+ call setDataFromPTR
+ jr drawAnyMino
  
-drawCurrentMino:
- ld a,(curX)
+;inputs:
+;ix = obj data ptr
+;hl = ptr to curxy etc.
+setDataFromPTR:
+ ld a,(hl)
  ld (dmX),a
- ld a,(curY)
+ inc hl
+ ld a,(hl)
  ld (dmY),a
+ inc hl ;past XY
  
  ld a,(ix+iDataXL)
  ld (dmOX),a
  ld a,(ix+iDataXH)
  ld (dmOX+1),a
  ld a,(ix+iDataY)
- ld (dmOX+2),a
+ ld (dmOY),a 
  
- ld hl, curBlock
- ld de, spriteID
- add hl, de ;block data + id
- ld a, (hl)
+ inc hl ;past rotation
+ ld a,(hl) ;save type
+ inc hl ;past type
+ inc hl ;past status
+ push hl ;now at block data struct
+ ld de,spriteID
+ add hl,de ;hl points to spriteID in block data struct
+ ld a,(hl)
  ld (tSpriteID),a
- inc hl ;block data + id + 1 -> pal
- ld a, (hl)
+ inc hl
+ ld a,(hl)
+ ld (tSpritePal),a
+ 
+ pop de
+ ret
+ 
+;requires ix as obj data ptr
+nullPreviousFrameMino:
+ ld hl, oldData
+ call setDataFromPTR
+ ld a,0
+ ld (tSpriteID),a
  ld (tSpritePAL),a
- ld de,curBlock
+ jr drawAnyMino
+ 
+drawCurrentMino:
+ ld hl, curData
+ call setDataFromPTR
+ ;jr drawAnyMino
 
 ;inputs: de=block data struct
+;ix = obj data ptr
 ;dmx,dmy,dmox,dmoy
 drawAnyMino: 
  ld b,4
@@ -2123,6 +2326,7 @@ dataReferences:
 .dl paletteData ;palette data
 .dl menuObjData ;menu data
 .dl pauseData
+
 .dl itemsInfo ;ptr to item info for display in game
 
 drefSize = 3
@@ -2136,14 +2340,40 @@ drefPalette	= drefSize * 4 + drefOfs
 drefMenu = drefSize * 5 + drefOfs
 drefPause = drefSize * 6 + drefOfs
 
+;these references behave the same as data references
+;but are for specific graphical elements,
+;instead of being for data pointers.
+;examples: references to...
+;tetris field data
+;hold data
+;score/lines/level
+;pretty much anything that requires the 
+;occasional redraw as part of it's update code.
+references:
+.dl fieldInfo
+.dl holdInfo
+.dl levelInfo + iDataSize
+.dl scoreInfo + iDataSize
+.dl linesInfo + iDataSize
+.dl charInfo
+
+refSize = 3
+refOfs = references - SSSCopiedData + SSS
+refField = refSize * 0 + refOfs
+refHold = refSize * 1 + refOfs
+refLevel = refSize * 2 + refOfs
+refScore = refSize * 3 + refOfs
+refLines = refSize * 4 + refOfs
+refChar = refSize * 5 + refOfs
+
 ;various equates for itemsInfo
 iDataType 	= 0 ;type of data (use type~ to check)
 iDataXL		= 1 ;x low byte
 iDataXH		= 2 ;x high byte
 iDataY		= 3 ;y
 iDataA		= 4 ;a (used as color/palette for most)
-iDataPTRL	= 5 ;ptr offset from SSS
-iDataPTRH	= 6 ;sorry! data must be <65536 bytes
+iDataPTRL	= 5 ;ptr offset from SSS (or extra data)
+iDataPTRH	= 6 ;sorry! SSS data must be <65536 bytes
 iDataW		= 7 ;extra data (width, # digits)
 iDataH		= 8 ;extra data 2 (height)
 iDataSize	= 9 ;size of data struct
@@ -2159,14 +2389,14 @@ typeMenu=7
 
 itemsInfo:
 .db 10 ;number of items
-;FIELD INFO
+fieldInfo:
 .db typeTetris
 .dw 0 ;x
 .db 0 ;y
 .db 0 ;a (does nothing?)
 .dw 0 ;uses refSprite data ptr
 .db 10, 20 ;width, height
-;HOLD INFO
+holdInfo:
 .db typeHold
 .dw 132
 .db 160
@@ -2180,7 +2410,7 @@ itemsInfo:
 .db 14 ;color of main
 .dw 96 ;width
 .db 15,72 ;bordercolor, height
-;SCORE INFO
+scoreInfo:
 .db typeString
 .dw 160
 .db 24
@@ -2194,7 +2424,7 @@ itemsInfo:
 .db 33
 .dw score - PSS ;variables are saved in PSS, data is saved in SSS
 .db 8, 0 ; size of number, unused
-;LEVEL INFO
+levelInfo:
 .db typeString
 .dw 160
 .db 48
@@ -2208,7 +2438,7 @@ itemsInfo:
 .db 33
 .dw level - PSS
 .db 3, 0 ;size number, unused
-;LINES INFO
+linesInfo:
 .db typeString
 .dw 160
 .db 72
@@ -2276,7 +2506,6 @@ menuJumps:
 spriteID = 8
 spritePAL= 9
 ;I piece
-blockDataSize = 10
 blockData:
  .db -1, 0
  .db  0, 0
