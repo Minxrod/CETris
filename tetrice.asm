@@ -192,30 +192,40 @@ pause:
  call scanKeys
  
  ld a,(keys)
- bit kbitMode, a
- jr nz, pause
+ bit kbitMode, a 
+ jr nz, pause ;wait until release of mode button
 
 pauseLoop:
- halt
  call scanKeys
 
  ld a,(keys)
  bit kbitMode, a
- ret nz
+ jr nz, pauseEnd
  bit kbitDel, a
- ret nz
+ jr nz, pauseEnd
  
+ ld ix, (drefPause)
+ call drawObjectsNoReset
  call swapVRamPTR
  jr pauseLoop
- 
- ret
 
-pauseColor:
-.db 0
-pauseText1:
-.db "~GAME~",0
-pauseText2:
-.db "PAUSED",0
+pauseEnd:
+ halt
+ call scanKeys
+ 
+ ld a,(keys)
+ bit kbitMode, a 
+ jr nz, pauseEnd ;wait until release of mode
+
+ ld ix, (drefIInfo)
+ call resetAllDrawCheck
+ ld ix, (drefIInfo)
+ call drawObjectsNoReset
+ call swapVRamPTR
+ ld ix, (drefIInfo)
+ call drawObjects
+ call swapVRamPTR
+ ret
  
 keys:
 .db 0,0,0,0
@@ -225,6 +235,10 @@ hold:
  bit rbitHoldEnabled,(ix+0)
  ret z ;hold is disabled
 
+ ;tell draw system to redraw HOLD
+ ld ix,(refHold)
+ res redrawObjBit, (ix+iDataType)
+ 
  ld a,(holdT)
  cp 7
  jr z, firstHold
@@ -318,6 +332,8 @@ hardDropLoop:
 hdrop:
  ld a,1
  ld (lockTimer),a
+ ld ix,(refScore)
+ res redrawObjBit, (ix+iDataType)
  jr dropReturn
  ret
  
@@ -328,6 +344,9 @@ userDrop:
  ld hl,(score)
  inc hl
  ld (score),hl
+ ld ix,(refScore)
+ res redrawObjBit, (ix+iDataType)
+ 
 drop:
  ld hl,0
  ld (timerT),hl
@@ -1115,7 +1134,7 @@ clearSprite:
  add hl,hl ;320y
  pop de
  add hl,de ;320Y+X
- ld de, vRamSplit ;to second half of vRam, for double-buffering
+ ld de, (vramOffPTR) ;to second half of vRam, for double-buffering
  add hl,de ;320Y+x+vRam
  
  ld de,320
@@ -1343,75 +1362,6 @@ drawNewMino:
  ld hl, curData
  call drawMinoFromPTR
  ret
- 
-drawGameOld2:
- ld ix,(drefIInfo)
- call drawObjectsNoReset
- 
- ld hl, curStatus
- bit csClearLineBit, (hl)
- jr nz, drawSkip
- 
- ld hl, curStatus + midOfs
- bit csClearLineBit, (hl)
- jr nz, clearSkip
- 
- call clearOld
-
-clearSkip:
- call drawCurrent
- 
-drawSkip:
- call swapVRamPTR
- ;draw again
- ld ix,(drefIInfo)
- call drawObjects ;will always check for draw twice, incase needed
- 
- ld hl, curStatus
- bit csClearLineBit, (hl)
- ret nz
- ld hl, curStatus + midOFs
- bit csClearLineBit, (hl)
- ret nz
- 
- call drawMidAsCurrent
- ret
-
-clearOld:
- ld hl, curStatus + oldOfs
- bit csClearLineBit, (hl)
- ret nz ;don't erase if line was cleared (not drawn)
- 
- ld hl, curStatus + oldOfs
- bit csLockedBit, (hl)
- ret nz ;don't erase if locked (should stay)
- 
- ld hl, oldData
- ld ix,(refField)
- call NullPTRMino
- ret 
- 
-drawCurrent:
- ld ix,(refField)
- call drawCurrentMino
- ret
-
-drawMidAsCurrent:
- ;new current frame is mid because it locked prev. frame and needs to draw to both buffers
- ld hl, curStatus
- bit csLockedBit, (hl)
- ret z ;if not locked, do not draw this frame.
-
- ld ix,(refField)
- ld hl,curData
- call drawMinoFromPTR
- 
- ld hl, midData
- ld de, midData+1
- ld bc, curDataSize * 2 - 1
- ld (hl),0
- ldir
- ret 
  
 ;input: ix = info ptr, 1st elem. is # struct elems
 drawObjects:
@@ -2171,7 +2121,7 @@ menuDraw:
  ld (ix+iDataY),a ;save y value to cursor
  
  ld ix,(menuDataPTR)
- call drawObjects
+ call drawObjectsNoReset ;never stop drawing menu objects. 
  call swapVRamPTR
  
  jr menuLoop
@@ -2507,6 +2457,7 @@ typeBox=6
 typeMenu=7
 
 boxColor = 14
+boxColor2= 15
 
 itemsInfo:
 .db 10 ;number of items
@@ -2530,7 +2481,7 @@ holdInfo:
 .db 16 ;y
 .db boxColor ;color of main
 .dw 96 ;width
-.db 15,72 ;bordercolor, height
+.db boxColor2, 80 ;bordercolor, height
 scoreInfo:
 .db typeString
 .dw 160
@@ -2589,7 +2540,7 @@ linesText:
  .db "Lines:",0
 
 SSSInfo = itemsInfo - SSSCopiedData + SSS
- 
+
 menuInfo = menuObjData - SSSCopiedData
 
 menuObjData:
@@ -2622,6 +2573,31 @@ menuText:
 menuJumps:
  jp initGame
  jp exit
+ 
+pauseData:
+ .db 2
+;background box
+ .db typeBox
+ .dw 32
+ .db 108
+ .db boxColor
+ .dw 56
+ .db boxColor2, 24
+;menu text
+ .db typeMenu
+ .dw 36
+ .db 112
+ .db 32
+ .dw pauseText - SSSCopiedData
+ .db 2, 0
+;note: cursorID does not apply
+;if active menu is not called
+ 
+ 
+pauseText:
+ .db " GAME ",0
+ .db "PAUSED",0
+ 
  
 ;format: x ofs, y ofs, spriteID, palette
 spriteID = 8
