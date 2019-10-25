@@ -19,6 +19,7 @@ blockDataSize = 10
 ;current status bits
 csLockedBit = 0    ;locked block bit
 csNewBlockBit = 1  ;prev. frame requests new block
+csClearLineBit = 2 ;if block cleared a line
 
 holdT= PSS + 256
 ;current mino data
@@ -68,10 +69,8 @@ rbitHardDropEnabled =5
 SSS = saveSScreen
 
 ;bit set/reset when an object must be updated
+;max redraw is 3 times
 redrawObjBit = 7
-;use in data to set an object to draw once
-;guaranteed from the data before being set to 0.
-drawInitial = 128 
 
 ;main program
 main:
@@ -121,16 +120,15 @@ initGame:
  call newBlock
  
  ;first draw to set up screen
- ld ix,SSSInfo
+ ld ix,(drefIInfo)
  call resetAllDrawCheck
- ld ix,SSSInfo
+ ld ix,(drefIInfo)
+ call drawObjectsNoReset
+ call swapVRamPTR
+ ld ix,(drefIInfo)
  call drawObjects
  call swapVRamPTR
- ld ix,SSSInfo
- call resetAllDrawCheck
- ld ix,SSSInfo
- call drawObjects
- 
+  
 game:
  call scanKeys
  ld a,(keys+0)
@@ -411,10 +409,22 @@ noIncrementE:
  ;add to lines cleared
  ld a,(linesClear)
  cp 0
- jr noLinesClear
- ;must redraw field
+ jr z, noLinesClear
+ ;must redraw field, update scores, etc.
  ld ix, (refField)
- res redrawObjBit, (ix + iDataType)
+ res redrawObjBit, (ix+iDataType)
+ 
+ ld ix, (refLevel)
+ res redrawObjBit, (ix+iDataType)
+ 
+ ld ix, (refScore)
+ res redrawObjBit, (ix+iDataType)
+ 
+ ld ix, (refLines)
+ res redrawObjBit, (ix+iDataType)
+ 
+ ld hl, curStatus
+ set csClearLineBit, (hl) ;clear bit 
  
  ld de,0
  ld e,a ;de is lines cleared
@@ -424,9 +434,7 @@ noIncrementE:
  
  ld hl,pointsPerLine
  add hl,de
- ld de,0
- ld a,(hl) ;score to add for lines cleared
- ld e,a
+ ld e,(hl)
  ld a,(level) ;level multiplier
  ld d,a
  mlt de ;level * linesClear
@@ -1287,44 +1295,136 @@ drawOneBlockNoGrid:
  ret
 
 drawGame:
- ld ix,SSSInfo
+ ld ix,(drefIInfo)
+ call drawObjectsNoReset
+ 
+ ld hl, curStatus
+ bit csClearLineBit, (hl)
+ jr nz, skipDraw1
+ ld hl, curStatus+midOfs
+ bit csClearLineBit, (hl)
+ jr nz, skipDraw1
+ 
+ call eraseOldMino
+ call drawNewMino
+
+skipDraw1: 
+ call swapVRamPTR
+ 
+ ld ix,(drefIInfo)
  call drawObjects
  
- ;draws to 2 frame old off-frame
- ld hl, curStatus + oldOfs
- bit csLockedBit, (hl)
- jr nz, setLockedBlock
+ ld hl, curStatus
+ bit csClearLineBit, (hl)
+ jr nz, skipDraw2
+ ld hl, curStatus + midOfs
+ bit csClearLineBit, (hl)
+ jr nz, skipDraw2
 
- ld ix,(refField)
- call nullPreviousFrameMino
- ;replaces with *new* current frame
- ld ix,(refField)
- call drawCurrentMino
- 
+ call eraseOldMino
+ call drawNewMino
+
+skipDraw2: 
  call swapVRamPTR
  ret
  
-setLockedBlock:
- ld ix,(refField)
- ld hl,oldData
- call drawMinoFromPTR
- call swapVRamPTRNoDisp
- ld ix,(refField)
- ld hl,oldData
- call drawMinoFromPTR
- call swapVRamPTRNoDisp
+eraseOldMino:
+ ld hl, curStatus + midOfs
+ bit csLockedBit, (hl)
+ ret nz ;don't clear a locked mino
  
+ ld ix,(refField)
+ ld hl, midData
+ call NullPTRMino
+ ret
+ 
+drawNewMino:
+ ld ix,(refField)
+ ld hl, curData
+ call drawMinoFromPTR
+ ret
+ 
+drawGameOld2:
+ ld ix,(drefIInfo)
+ call drawObjectsNoReset
+ 
+ ld hl, curStatus
+ bit csClearLineBit, (hl)
+ jr nz, drawSkip
+ 
+ ld hl, curStatus + midOfs
+ bit csClearLineBit, (hl)
+ jr nz, clearSkip
+ 
+ call clearOld
+
+clearSkip:
+ call drawCurrent
+ 
+drawSkip:
+ call swapVRamPTR
+ ;draw again
+ ld ix,(drefIInfo)
+ call drawObjects ;will always check for draw twice, incase needed
+ 
+ ld hl, curStatus
+ bit csClearLineBit, (hl)
+ ret nz
+ ld hl, curStatus + midOFs
+ bit csClearLineBit, (hl)
+ ret nz
+ 
+ call drawMidAsCurrent
+ ret
+
+clearOld:
+ ld hl, curStatus + oldOfs
+ bit csClearLineBit, (hl)
+ ret nz ;don't erase if line was cleared (not drawn)
+ 
+ ld hl, curStatus + oldOfs
+ bit csLockedBit, (hl)
+ ret nz ;don't erase if locked (should stay)
+ 
+ ld hl, oldData
+ ld ix,(refField)
+ call NullPTRMino
+ ret 
+ 
+drawCurrent:
  ld ix,(refField)
  call drawCurrentMino
- 
- call swapVRamPTR ;new block drawn to both buffers
  ret
+
+drawMidAsCurrent:
+ ;new current frame is mid because it locked prev. frame and needs to draw to both buffers
+ ld hl, curStatus
+ bit csLockedBit, (hl)
+ ret z ;if not locked, do not draw this frame.
+
+ ld ix,(refField)
+ ld hl,curData
+ call drawMinoFromPTR
+ 
+ ld hl, midData
+ ld de, midData+1
+ ld bc, curDataSize * 2 - 1
+ ld (hl),0
+ ldir
+ ret 
  
 ;input: ix = info ptr, 1st elem. is # struct elems
 drawObjects:
- ;ld ix,SSSInfo
+ ld a,$00 ;nop
+ jr drawObjs
+drawObjectsNoReset:
+ ld a,$C9 ;ret
+ ;jr drawObjs
+
+drawObjs:
+ ld (smcRedrawReset),a
  ld b,(ix)
- inc ix
+ inc ix 
 drawAllObjects:
  push bc
  ;ix = info ptr
@@ -1342,31 +1442,34 @@ resetAllDrawCheck:
  inc ix
  ld de,iDataSize
 resAllObjects:
- res redrawObjBit, (ix+iDataType)
+ res redrawObjBit,(ix+iDataType)
  add ix,de
  djnz resAllObjects
  ret
  
 ;input: ix = data ptr to object
 ;note: no guarantees on data ptr validity on return
+;note: only sets 1st bit
 drawObject:
  push ix
  call drawObjectJump
  pop ix
  ;cleanup from drawing object
- set redrawObjBit, (ix+iDataType)
+smcRedrawReset:
+ ret ;either ret (no set) or nop (set)
  
+ set redrawObjBit,(ix+iDataType)
  ret
  
 drawObjectJump:
  ld de,0
  ld e, (ix+iDataType) ;e is data type
- sla e ;shifts last bit into carry and doubles e
- ret c ;bit is set = don't draw. 
+ sla e
+ ret c ;return if already drawn
+ sla e
  
  ld hl,drawJumps
- add hl,de ;jumps + 2e
- add hl,de ;jumps + 4e (since e is already x2 from sla e)
+ add hl,de ;jumps + 4e (since e is already *4 from 2x sla e)
  
  jp (hl)
  ret ;implied return from any of the jump methods
@@ -1444,25 +1547,28 @@ drawNullBlockReturn:
  ;tSprite stuff is OK
  push ix ;preserve info ptr
  ;following code is transparency fix
- ;not in use because it lags pretty badly
- ;ld a,(tSpriteID)
- ;ld b,a
- ;ld a,(tSpritePAL)
- ;ld c,a
- ;ld a,0
- ;ld (tSpriteID),a
- ;ld (tSpritePAL),a
- ;push bc ;tSprite info
- ;push hl ;y location
- ;push de ;x location
- ;call drawOneBlockNoGrid
- ;pop de
- ;pop hl
- ;pop bc
- ;ld a,b
- ;ld (tSpriteID),a
- ;ld a,c
- ;ld (tSpritePAL),a
+ ;OLD---not in use because it lags pretty badly
+ ;NEW---due to revised draw code, transparency fix
+ ;is now active. remove if you have lag
+ ;and have no transparent blocks.
+ ld a,(tSpriteID)
+ ld b,a
+ ld a,(tSpritePAL)
+ ld c,a
+ ld a,0
+ ld (tSpriteID),a
+ ld (tSpritePAL),a
+ push bc ;tSprite info
+ push hl ;y location
+ push de ;x location
+ call drawOneBlockNoGrid
+ pop de
+ pop hl
+ pop bc
+ ld a,b
+ ld (tSpriteID),a
+ ld a,c
+ ld (tSpritePAL),a
  call drawOneBlockNoGrid
  pop ix ;restore info ptr
 skipBlockDraw:
@@ -1471,18 +1577,9 @@ skipBlockDraw:
  pop bc
  djnz drawFieldY
  
- push ix
- call drawCurrentMino
- pop ix
- ret
-
-;only draws the topmost row of the game field
-;to be used after a line clear
-;note: still requires a pointer to the field data
-;since it just calls drawField but with height=1
-drawFieldTop:
- ld b,1
- jr drawFieldY
+ ;push ix
+ ;call drawCurrentMino
+ ;pop ix
  ret
  
 drawMinoTempDE:
@@ -1621,8 +1718,9 @@ setDataFromPTR:
  ret
  
 ;requires ix as obj data ptr
-nullPreviousFrameMino:
- ld hl, oldData
+;hl as setDataFromPTR ptr to curdata etc
+;also, nice
+nullPTRMino:
  call setDataFromPTR
  ld a,0
  ld (tSpriteID),a
@@ -1692,6 +1790,8 @@ skipDrawBlock:
 
 drawTextColor:
  .db 0
+drawTextBG:
+ .db 0
 
 ;inputs: ix = data ptr
 drawText:
@@ -1708,6 +1808,7 @@ drawText:
  ld hl,0
  ld l,(ix+iDataY) ;xy set
  ld a,(ix+iDataA) ;color
+ ld c,(ix+iDataH) ;bg color 0=transparent
  pop ix ;this is now the string data ptr
 
  ;must be provided:
@@ -1715,8 +1816,11 @@ drawText:
  ;hl - y
  ;de - x
  ;a - color
+ ;c - bg color
 drawTextManual:
  ld (drawTextColor),a
+ ld a,c
+ ld (drawTextBG),a
 drawTextLoop:
  ld a,(ix)
  cp 0 ;check null-terminated string
@@ -1740,6 +1844,11 @@ drawTextLoop:
  ld b,8
  ld c,b ;8x8 font
 
+ ld a,(drawTextBG)
+ cp 0
+ jr z,textTransBG
+ call clearSprite
+textTransBG:
  ld a,(drawTextColor)
  call drawSprite
  pop hl ;de, x coords
@@ -1762,7 +1871,7 @@ textLoopEnd:
 draw24Saved:
 .dl 0
 d24NColor:
-.db 0
+.db 0, 0
 draw24BitNumber:
  push ix
  ld hl,0
@@ -1787,6 +1896,8 @@ draw24BitNumber:
  ld b,(ix+iDataW)
  ld a,(ix+iDataA)
  ld (d24NColor),a
+ ld a,(ix+iDataH) ;bg color
+ ld (d24NColor+1),a
  ld (draw24Saved),de
 d24bnLoop:
  push bc
@@ -1826,6 +1937,11 @@ d24bnLoop:
  pop de ;de=x
  pop hl ;restore l=y
  ld bc, $0808
+ ld a,(d24NColor+1)
+ cp 0
+ jr z,d24TransBG
+ call clearSprite
+d24TransBG:
  ld a,(d24NColor)
  call drawSprite
  pop hl
@@ -1951,6 +2067,7 @@ drawMenuItems:
  push bc
  push de ;x value
  push af ;color value
+ ld c,0 ; no bg color
  call drawTextManual
  inc ix
  ld a,8
@@ -2326,8 +2443,7 @@ dataReferences:
 .dl paletteData ;palette data
 .dl menuObjData ;menu data
 .dl pauseData
-
-.dl itemsInfo ;ptr to item info for display in game
+.dl SSSInfo ;ptr to item info for display in game
 
 drefSize = 3
 drefOfs = dataReferences - SSSCopiedData + SSS
@@ -2339,6 +2455,7 @@ drefBackground = drefSize * 3 + drefOfs
 drefPalette	= drefSize * 4 + drefOfs
 drefMenu = drefSize * 5 + drefOfs
 drefPause = drefSize * 6 + drefOfs
+drefIInfo = drefSize * 7 + drefOfs
 
 ;these references behave the same as data references
 ;but are for specific graphical elements,
@@ -2349,13 +2466,15 @@ drefPause = drefSize * 6 + drefOfs
 ;score/lines/level
 ;pretty much anything that requires the 
 ;occasional redraw as part of it's update code.
+;make sure it points to SSS data,
+;not the original data, because program reads from SSSInfo.
 references:
-.dl fieldInfo
-.dl holdInfo
-.dl levelInfo + iDataSize
-.dl scoreInfo + iDataSize
-.dl linesInfo + iDataSize
-.dl charInfo
+.dl fieldInfo - itemsInfo + SSSInfo
+.dl holdInfo - itemsInfo + SSSInfo
+.dl levelInfo + iDataSize - itemsInfo + SSSInfo
+.dl scoreInfo + iDataSize - itemsInfo + SSSInfo
+.dl linesInfo + iDataSize - itemsInfo + SSSInfo
+.dl charInfo - itemsInfo + SSSInfo
 
 refSize = 3
 refOfs = references - SSSCopiedData + SSS
@@ -2387,6 +2506,8 @@ typePreview=5
 typeBox=6
 typeMenu=7
 
+boxColor = 14
+
 itemsInfo:
 .db 10 ;number of items
 fieldInfo:
@@ -2407,7 +2528,7 @@ holdInfo:
 .db typeBox
 .dw 152 ;x
 .db 16 ;y
-.db 14 ;color of main
+.db boxColor ;color of main
 .dw 96 ;width
 .db 15,72 ;bordercolor, height
 scoreInfo:
@@ -2416,49 +2537,49 @@ scoreInfo:
 .db 24
 .db 32
 .dw scoreText - SSSCopiedData ;ptr to string data
-.db 0, 0 ;unused
+.db 0, boxColor ;unused, bgcolor
 ;SCORE NUMBER
 .db typeNumber
 .dw 160
 .db 32
 .db 33
 .dw score - PSS ;variables are saved in PSS, data is saved in SSS
-.db 8, 0 ; size of number, unused
+.db 8, boxColor ; size of number, bgcolor
 levelInfo:
 .db typeString
 .dw 160
 .db 48
 .db 32
 .dw levelText - SSSCopiedData
-.db typeString, 0 ;old, unused
+.db typeString, boxColor ;old, bg color
 ;LEVEL NUMBER
 .db typeNumber
 .dw 160
 .db 56
 .db 33
 .dw level - PSS
-.db 3, 0 ;size number, unused
+.db 3, boxColor ;size number, bg color
 linesInfo:
 .db typeString
 .dw 160
 .db 72
 .db 32
 .dw linesText - SSSCopiedData
-.db typeString, 0
+.db typeString, boxColor ;old, bgcolor
 ;LINES NUMBER
 .db typeNumber
 .dw 160
 .db 80
 .db 33
 .dw lines - PSS
-.db 4, 0 ;number of digits, unused
+.db 4, boxcolor ;number of digits, bgcolor
 ;DEBUG TEXT
 .db typeNumber
 .dw 204
 .db 80
 .db 32
 .dw timerT - PSS
-.db 3, 0
+.db 3, boxcolor
 
 scoreText:
  .db "Score:",0
