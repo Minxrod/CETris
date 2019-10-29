@@ -131,9 +131,9 @@ initGame:
   
 game:
  call scanKeys
- ld a,(keys+0)
- bit kbitDel, a
- ret nz
+ ld a,(buttonQuit)
+ call checkKeyDown
+ ret c
  
  call shiftOldData
  ;part of update code, essentially
@@ -162,47 +162,48 @@ shiftOldData:
  ret
  
 userUpdate:
- ld a,(keys+3)
- bit kbitLeft, a
- call nz, checkMoveLeft
+ ld a,(buttonLeft)
+ call checkKeyDown
+ call c, checkMoveLeft
  
- ld a,(keys+3)
- bit kbitRight, a
- call nz, checkMoveRight
+ ld a,(buttonRight)
+ call checkKeyDown
+ call c, checkMoveRight
  
- ld a,(keys+0)
- bit kbit2nd, a
- call nz, checkRotationLeft
+ ld a,(buttonRotateLeft)
+ call checkKeyDown
+ call c, checkRotationLeft
  
- ld a,(keys+1)
- bit kbitAlpha, a
- call nz, checkRotationRight
+ ld a,(buttonRotateRight)
+ call checkKeyDown
+ call c, checkRotationRight
  
- ld a,(keys+2)
- bit kbitGraphVar, a
- call nz, hold
+ ld a,(buttonHold)
+ call checkKeyDown
+ call c, hold
  
- ld a,(keys+0)
- bit kbitMode, a
- call nz, pause
+ ld a,(buttonPause)
+ call checkKeyDown
+ call c, pause
  ret
  
 pause:
  halt
  call scanKeys
  
- ld a,(keys)
- bit kbitMode, a 
- jr nz, pause ;wait until release of mode button
+ ld a,(buttonPause)
+ call checkKeyDown
+ jr c, pause ;wait until release of mode button
 
 pauseLoop:
  call scanKeys
 
- ld a,(keys)
- bit kbitMode, a
- jr nz, pauseEnd
- bit kbitDel, a
- jr nz, pauseEnd
+ ld a,(buttonPause)
+ call checkKeyDown
+ jr c, pauseEnd
+ ld a,(buttonQuit)
+ call checkKeyDown
+ jr c, pauseEnd
  
  ld ix, (drefPause)
  call drawObjectsNoReset
@@ -213,9 +214,9 @@ pauseEnd:
  halt
  call scanKeys
  
- ld a,(keys)
- bit kbitMode, a 
- jr nz, pauseEnd ;wait until release of mode
+ ld a,(buttonPause)
+ call checkKeyDown
+ jr c, pauseEnd ;wait until release of mode
 
  ld ix, (drefIInfo)
  call resetAllDrawCheck
@@ -226,9 +227,6 @@ pauseEnd:
  call drawObjects
  call swapVRamPTR
  ret
- 
-keys:
-.db 0,0,0,0
  
 hold:
  ld ix,rules
@@ -295,12 +293,12 @@ update:
  cp b
  jr c, drop
 
- ld a,(keys+3)
- bit kbitDown,a
- jr nz, userdrop
- ld a,(keys+3)
- bit kbitUp, a
- jr nz, harddrop
+ ld a,(buttonSoft)
+ call checkKeyDown
+ jr c, userdrop
+ ld a,(buttonHard)
+ call checkKeyDown
+ jr c, harddrop
 dropReturn:
  
  ;check if lock
@@ -2120,29 +2118,29 @@ scanToMenuJumps:
 menuWaitNoInput:
  call scanKeys
  
- ld a,(keys)
- bit kbitDel,a
- jr nz,menuWaitNoInput ;wait for no selection
+ ld a,(buttonConfirm)
+ call checkKeyDown
+ jr c,menuWaitNoInput ;wait for no selection
  jr menuDraw
   
 menuLoop:
  call scanKeys
  
- ld a,(keys)
- bit kbit2nd,a
- jr nz,menuSelect
+ ld a,(buttonConfirm)
+ call checkKeyDown
+ jr c,menuSelect
  
- ld a,(keys+3)
- bit kbitUp,a
- jr nz,menuUp
+ ld a,(buttonUp)
+ call checkKeyDown
+ jr c,menuUp
  
- ld a,(keys+3)
- bit kbitDown,a
- jr nz,menuDown
+ ld a,(buttonDown)
+ call checkKeyDown
+ jr c,menuDown
  
- ld a,(keys)
- bit kbitDel,a
- jp nz,exit
+ ld a,(buttonQuit)
+ call checkKeyDown
+ jp c,exit
  jr menuLoop ;only redraw if something happens
 
 menuDraw:
@@ -2338,6 +2336,62 @@ randIncSav:
  ld (hl),a
  ret
  
+;key registers read to here
+keys:
+.db 0,0,0,0
+.db 0,0,0,0
+
+;key ids for important operations
+keyIDs:
+buttonleft:
+.db 49
+buttonright:
+.db 50
+buttonsoft:
+.db 48
+buttonhard:
+.db 51
+buttonrotateleft:
+.db 5
+buttonrotateright:
+.db 15
+buttonhold:
+.db 23
+buttonpause: ;pause i guess \('~')/
+.db 6
+
+buttonup:
+.db 51
+buttondown:
+.db 48
+buttonconfirm:
+.db 5
+buttonquit:
+.db 7
+
+
+;a = key ID to check
+checkKeyDown:
+ ld de,0
+ ld e,a
+ and $07 ; a = bit
+ srl e
+ srl e
+ srl e  ; e = byte
+ ld hl, keys
+ add hl,de ;add byte ofs 
+ ld b,a
+ ld a,(hl) 
+ inc b 
+ ;b is shift count
+ ;a is data to shift
+shiftKeyBit:
+ rrca
+ djnz shiftKeyBit
+ rlca ;result: whatever stuff this does
+ ;so carry is set or not
+ ret
+ 
 ;source: http://wikiti.brandonw.net/index.php?title=84PCE:Ports:A000
 ;I get how this works in theory
 ;but it's still sketchy to me
@@ -2352,16 +2406,25 @@ scan_wait:
  cp a,(hl)      ; Wait for Idle mode
  jr nz,scan_wait
 
- ; Read data registers here as needed
+ ;just take all of the keys
+ ;probably can loop but eh
  ld a,(kbdG1)
  ld (keys),a
  ld a,(kbdG2)
  ld (keys+1),a
  ld a,(kbdG3)
  ld (keys+2),a
- ld a,(kbdG7)
+ ld a,(kbdG4)
  ld (keys+3),a
- 
+ ld a,(kbdG5)
+ ld (keys+4),a
+ ld a,(kbdG6)
+ ld (keys+5),a
+ ld a,(kbdG7)
+ ld (keys+6),a
+ ;ld a,(kbdG8) ;oh wait
+ ;ld (keys+7),a
+
  ei             ; Enable OS interrupts
  ret
  
@@ -2639,11 +2702,9 @@ pauseData:
 ;note: cursorID does not apply
 ;if active menu is not called
  
- 
 pauseText:
  .db " GAME ",0
  .db "PAUSED",0
- 
  
 ;format: x ofs, y ofs, spriteID, palette
 spriteID = 8
