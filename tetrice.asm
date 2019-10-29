@@ -131,7 +131,7 @@ initGame:
   
 game:
  call scanKeys
- ld a,(buttonQuit)
+ ld ix,buttonQuit
  call checkKeyDown
  ret c
  
@@ -162,46 +162,45 @@ shiftOldData:
  ret
  
 userUpdate:
- ld a,(buttonLeft)
+ ld ix,buttonLeft
  call checkKeyDown
  call c, checkMoveLeft
  
- ld a,(buttonRight)
+ ld ix,buttonRight
  call checkKeyDown
  call c, checkMoveRight
  
- ld a,(buttonRotateLeft)
+ ld ix,buttonRotateLeft
  call checkKeyDown
  call c, checkRotationLeft
  
- ld a,(buttonRotateRight)
+ ld ix,buttonRotateRight
  call checkKeyDown
  call c, checkRotationRight
  
- ld a,(buttonHold)
+ ld ix,buttonHold
  call checkKeyDown
  call c, hold
  
- ld a,(buttonPause)
+ ld ix,buttonPause
  call checkKeyDown
  call c, pause
  ret
  
 pause:
- halt
  call scanKeys
  
- ld a,(buttonPause)
+ ld ix,buttonPause
  call checkKeyDown
- jr c, pause ;wait until release of mode button
+ jr nc, pause ;wait until release of mode button
 
 pauseLoop:
  call scanKeys
 
- ld a,(buttonPause)
+ ld ix,buttonPause
  call checkKeyDown
  jr c, pauseEnd
- ld a,(buttonQuit)
+ ld ix,buttonQuit
  call checkKeyDown
  jr c, pauseEnd
  
@@ -211,10 +210,9 @@ pauseLoop:
  jr pauseLoop
 
 pauseEnd:
- halt
  call scanKeys
  
- ld a,(buttonPause)
+ ld ix,buttonPause
  call checkKeyDown
  jr c, pauseEnd ;wait until release of mode
 
@@ -293,10 +291,10 @@ update:
  cp b
  jr c, drop
 
- ld a,(buttonSoft)
+ ld ix,buttonSoft
  call checkKeyDown
  jr c, userdrop
- ld a,(buttonHard)
+ ld ix,buttonHard
  call checkKeyDown
  jr c, harddrop
 dropReturn:
@@ -2118,27 +2116,27 @@ scanToMenuJumps:
 menuWaitNoInput:
  call scanKeys
  
- ld a,(buttonConfirm)
+ ld ix,buttonConfirm
  call checkKeyDown
- jr c,menuWaitNoInput ;wait for no selection
+ jr c, menuWaitNoInput ;wait for no selection
  jr menuDraw
   
 menuLoop:
  call scanKeys
  
- ld a,(buttonConfirm)
+ ld ix,buttonConfirm
  call checkKeyDown
  jr c,menuSelect
  
- ld a,(buttonUp)
+ ld ix,buttonUp
  call checkKeyDown
  jr c,menuUp
  
- ld a,(buttonDown)
+ ld ix,buttonDown
  call checkKeyDown
  jr c,menuDown
  
- ld a,(buttonQuit)
+ ld ix,buttonQuit
  call checkKeyDown
  jp c,exit
  jr menuLoop ;only redraw if something happens
@@ -2343,35 +2341,41 @@ keys:
 
 ;key ids for important operations
 keyIDs:
+buttonID=0
+buttonTimeStart=1
+buttonTimeRepeat=2
+buttonTimer=3
+noRepeat = -1
+
 buttonleft:
-.db 49
+.db 49, 20, 5, 0
 buttonright:
-.db 50
+.db 50, 20, 5, 0
 buttonsoft:
-.db 48
+.db 48, 0, 8, 0
 buttonhard:
-.db 51
+.db 51, noRepeat, noRepeat, 0
 buttonrotateleft:
-.db 5
+.db 5, noRepeat, noRepeat, 0
 buttonrotateright:
-.db 15
+.db 15, noRepeat, noRepeat, 0
 buttonhold:
-.db 23
-buttonpause: ;pause i guess \('~')/
-.db 6
+.db 23, noRepeat, noRepeat, 0
+buttonpause:
+.db 6, noRepeat, noRepeat, 0
 
 buttonup:
-.db 51
+.db 51, noRepeat, noRepeat, 0
 buttondown:
-.db 48
+.db 48, noRepeat, noRepeat, 0
 buttonconfirm:
-.db 5
+.db 5, noRepeat, noRepeat, 0
 buttonquit:
-.db 7
+.db 7, noRepeat, noRepeat, 0
 
-
-;a = key ID to check
+;ix = ptr to key data to check
 checkKeyDown:
+ ld a,(ix+buttonID)
  ld de,0
  ld e,a
  and $07 ; a = bit
@@ -2390,6 +2394,37 @@ shiftKeyBit:
  djnz shiftKeyBit
  rlca ;result: whatever stuff this does
  ;so carry is set or not
+ push af ;save carry state
+ ld a,(ix+buttonTimer)
+ cp 0
+ jr z, buttonOK
+ cp (ix+buttonTimeStart)
+ jr c, buttonNotOK ;less than start time
+ sub (ix+buttonTimeStart) ;remove start time
+ cp (ix+buttonTimeRepeat) ;compare to repeater time
+ jr c, buttonNotOK ;less than repeat: don't repeat
+ ;hit repeat timer: reset it, continue, key is good
+ ld a,(ix+buttonTimeStart)
+ ld (ix+buttonTimer),a
+ 
+buttonOK:
+ pop af ;use whatever state button had
+ 
+ jr nc, resetTimer
+ inc (ix+buttonTimer)
+ ret
+ 
+buttonNotOK:
+ pop af
+ jr nc, resetTimer ;button isn't pressed anyways
+ inc (ix+buttonTimer) ;inc for eventual repeat
+ 
+ or a,a ;clear carry
+ ret
+
+resetTimer:
+ ld a,0
+ ld (ix+buttonTimer),a
  ret
  
 ;source: http://wikiti.brandonw.net/index.php?title=84PCE:Ports:A000
@@ -2782,7 +2817,7 @@ sp8bpp = 3
  
 spriteData:
 ;testing cooler script
-.db $0, $1, $1, $1, $1, $1, $1, $1, $1, $1, $1, $2
+.db $1, $1, $1, $1, $1, $1, $1, $1, $1, $1, $1, $2
 .db $1, $1, $1, $1, $1, $1, $1, $1, $1, $1, $2, $3
 .db $1, $1, $2, $2, $2, $2, $2, $2, $2, $2, $3, $3
 .db $1, $1, $2, $2, $2, $2, $2, $2, $2, $2, $3, $3
