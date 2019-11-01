@@ -1405,7 +1405,6 @@ drawGame:
  call drawNewMino
 
 skipDraw1:
- call waitLCDRIS
  call swapVRamPTR
  
  ld ix,(drefIInfo)
@@ -2371,11 +2370,11 @@ buttonTimer=3
 noRepeat = -1
 
 buttonleft:
-.db 49, 20, 5, 0
+.db 49, 7, 2, 0
 buttonright:
-.db 50, 20, 5, 0
+.db 50, 7, 2, 0
 buttonsoft:
-.db 48, 0, 8, 0
+.db 48, 0, 3, 0
 buttonhard:
 .db 51, noRepeat, noRepeat, 0
 buttonrotateleft:
