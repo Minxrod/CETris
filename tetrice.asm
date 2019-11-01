@@ -77,9 +77,13 @@ main:
  ld (preserveSP),sp
  call initLCD
  call initData
+ call loadSave
+ ld (saveDataPTR),de
+ 
  call mainMenu
  
 exit:
+ call saveSave
  call resetLCD
  call restoreKeyboard
  
@@ -87,6 +91,8 @@ exit:
  ret
 
 preserveSP:
+.dl 0
+saveDataPTR:
 .dl 0
 
 mainMenu:
@@ -1056,19 +1062,26 @@ initLCD:
  ld (hl),0
  ldir
  
- ld a, lcdBpp8
- ld ($e30018),a 
- ld hl, vRam
- ld de, vRam+1
- ld bc, vRamEnd - vRam
- ld (hl),0
- ldir
- 
 ;intiialize palette from data
  ld hl, paletteData
  ld de, $e30200
  ld bc, paletteDataEnd - paletteData
  ldir  
+ 
+ ;ld hl, lcdIntVSync 
+ ;ld (mpLcdCtrl),hl
+  
+ ld hl, lcdBpp8 | lcdPwr | lcdBgr | lcdIntFront
+ ld (mpLcdCtrl),hl
+ ;following change based on ;https://www.cemetech.net/forum/viewtopic.php?t=13695&start=0
+ ld a,4
+ ld (mpLcdIcr),a
+ 
+ ld hl, vRam
+ ld de, vRam+1
+ ld bc, vRamEnd - vRam
+ ld (hl),0
+ ldir
  ret
 
 ;return lcd to normal state (bpp16)
@@ -1077,8 +1090,8 @@ resetLCD:
  ld hl,vRam
  ld (mpLcdUpbase),hl
  
- ld a, lcdBpp16
- ld ($e30018), a
+ ld hl, lcdNormalMode
+ ld (mpLcdCtrl), hl
  call _ClrLCDFull
  call _DrawStatusBar
  ret
@@ -1100,8 +1113,18 @@ swapVRamPTRNoDisp:
  ld de,(vramOffPtr)
  ld (vramOnPtr),de
  ld (vramOffPtr),hl
- ret
  
+;also modified based on
+;https://www.cemetech.net/forum/viewtopic.php?t=13695&start=0
+waitLCDRIS:
+ ld hl, mpLcdIcr
+ set bLcdIntLNBU, (hl)
+ ld l, mpLcdRis & $FF
+wr:
+ bit bLcdIntLNBU, (hl)
+ jr z, wr
+ ret
+
 ;input:
 ;a = color
 ;de = x
@@ -1381,7 +1404,8 @@ drawGame:
  call eraseOldMino
  call drawNewMino
 
-skipDraw1: 
+skipDraw1:
+ call waitLCDRIS
  call swapVRamPTR
  
  ld ix,(drefIInfo)
@@ -1397,8 +1421,7 @@ skipDraw1:
  call eraseOldMino
  call drawNewMino
 
-skipDraw2: 
- call swapVRamPTR
+skipDraw2:
  ret
  
 eraseOldMino:
@@ -2496,10 +2519,44 @@ linesClear:
 pointsPerLine:
  .db 0,1,3,5,8
 pointsPerMini:
- .db 1,2,4 
+ .db 1,2
 pointsPerTLine:
  .db 4,8,12,16,24
 
+CETrisSavSize = 64
+CETrisSavVar:
+ .db AppVarObj, "CETrisSV", 0
+ 
+loadSave:
+ ld hl, CETrisSavVar
+ call _Mov9ToOP1
+ call _ChkFindSym
+ jr c, createSave
+ ld a,b
+ or a
+ ret z
+ call _Arc_Unarc
+ ld hl, CETrisSavVar
+ call _Mov9ToOP1
+ call _ChkFindSym
+ ;de=data ptr
+ ret
+
+createSave:
+ ld hl, CETrisSavVar
+ call _Mov9ToOP1
+ ld hl, CETrisSavSize
+ call _CreateAppVar
+ ;de=data ptr
+ ret
+
+;assumes loaded already in RAM
+saveSave:
+ ld hl, CETrisSavVar
+ call _Mov9ToOP1
+ call _Arc_Unarc
+ ret
+ 
 ;copies data from SSSCopiedData to SSS
 initData:
  ld hl,SSSCopiedData
