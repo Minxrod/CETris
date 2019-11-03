@@ -52,9 +52,9 @@ oldBlock = oldOfs + curBlock
 score = PSS + 320
 level = PSS + 324
 lines = PSS + 328 
-timerT = PSS + 332
-lockTimer = PSS + 336
-
+linesToNextLevel = PSS + 332
+timerT = PSS + 336
+lockTimer = PSS + 340
 
 rules = PSS + 512
 rbitGameCont = 0
@@ -101,8 +101,6 @@ mainMenu:
  ret
  
 initGame:
- ld a,1
- ld (level),a
  ld a,0
  ld (lines),a
  
@@ -453,6 +451,10 @@ noIncrementE:
  add hl,de
  ld (lines),hl
  
+ ld a,(linesToNextLevel)
+ add a,e ;e=lines cleared
+ ld (linesToNextLevel),a
+ 
  ld hl,pointsPerLine
  add hl,de
  ld e,(hl)
@@ -477,12 +479,15 @@ noIncrementE:
  add hl,de ;score+=100a
  ld (score),hl
  
- ;makeshift level calculation until it is more formalized
- ld hl,(lines)
- ld a,10
- call _DivHLbyA
+ ;increment level for every 10 lines cleared
+ ld a,(linesToNextLevel)
+ sub 10 ;equiv flags to cp 10 and saves sub after
+ jr c, noLevelUp
+ ld (linesToNextLevel),a
+ ld hl, (level)
  inc hl
  ld (level),hl
+noLevelUp:
 noLinesClear:
 ;all of the above do not update when not cleared.
  ret
@@ -1246,6 +1251,9 @@ ppbpp:
  jp putPixel4bpp
  jp putPixel8bpp
  
+;a=pal
+;ix=data ptr
+;hl=vram ptr
 putPixel8bpp:
  push af
  ld a,(ix+0)
@@ -1261,17 +1269,70 @@ transPixel8:
  inc hl ;coords
  ret
  
+;a=pal
+;ix=data ptr
+;hl=vram ptr
+putPixel4bpp:
+ ld c,a ;save palette ofs
+ ld b,(ix+0) ;get data
+ ld a,b
+ and $F0 
+ rrca
+ rrca
+ rrca
+ rrca ;shift to lower bits
+ cp 0
+ jr z, noPut1stPixel
+ add a,c ;add palette ofs to color
+ ld (hl),a ;load first nibble + palette ofs
+noPut1stPixel:
+ inc hl ;next coord
+ 
+ ld a,b ;data again
+ and $0F 
+ cp 0
+ jr z,noPut2ndPixel
+ add a,c ;add palette and color
+ ld (hl),a
+noPut2ndPixel:
+ inc hl ;next coord
+ inc ix ;next data chunk
+ ld a,c
+ ret
+
+;a=palette ofs
+;hl=vram ptr
+;ix=data ptr
+putPixel2bpp:
+ ld d,a ;save palette ofs
+ ld c,(ix+0)
+ ld b,4
+putPixel2bit:
+ xor a ;a=0
+ rlc c
+ rla
+ rlc c
+ rla ;get 2 bits from c into a
+ cp 0
+ jr z, trans2bit
+ add a,d ;add pal and ofs
+ ld (hl),a
+trans2bit:
+ inc hl
+ djnz putPixel2bit
+ inc ix
+ ld a,d
+ ret
+ 
+;a=palette ofs
+;ix=data ptr
+;hl=vram ptr
 putPixel1bpp:
- ;ld e,a ;save palette
  ld c,(ix+0)
  ld b,8
  ;new:
  ;c=bit data
  ;b=pixel count
- ;a,e=palette
- ;old:
- ;hl is still coords
- ;ix is still spdataptr
 putPixelBit:
  rlc c ;get bit from c
  ;if bit is zero, pixel is transparent.
@@ -1281,6 +1342,19 @@ noPutPixelBit:
  inc hl ;next
  djnz putPixelBit
  inc ix ;done with this byte of data
+ ret
+ 
+;input: h
+;destroys: b
+;output: c = 1 << h
+getBPPFromID:
+ ld b,h
+ inc b
+ ld c,$01
+shiftLoop:
+ rlc c
+ djnz shiftLoop
+ rrc c
  ret
  
 drawHeldMino:
@@ -1376,17 +1450,37 @@ drawOneBlock:
  ;accepts (DE, L) as coordinates
  ;still needs tSpriteID and tSpritePAL
 drawOneBlockNoGrid:
+ ld ix, (drefSprite)
+ ld h, (ix) ;get bpp
+ inc ix
+ ld bc,0
+ call getBPPFromID
+ ;h = bpp id
+ ;c = bpp #
+ 
  ld a, (tSpriteID)
  ld b,144
- ld c,a ;sprite size * a
- mlt bc
- ld ix, (drefSprite)
- add ix,bc ;spriteData+64*spriteID
+ mlt bc ;12 * 12 * c
+ srl b
+ rr c
+ srl b
+ rr c 
+ srl b
+ rr c ;144 * c / 8 where c is in [1,2,4,8]
+ ;therefore, c<256 and b can be mlt'd again
+ ld b, a
+ mlt bc ;spritedatasize*spriteID
+ add ix,bc
  
- ld a, (tSpritePAL)
+ ld c,12 ;width in BYTES
+ ld b,h
+ inc b
+divideByBPP:
+ rrc c
+ djnz divideByBPP
  ld b,12
- ld c,b
- call drawSprite
+ ld a, (tSpritePAL)
+ call drawSpriteCustomBPP
  ;pop hl ;restore old coordinates
  ret
 
@@ -1473,6 +1567,9 @@ resAllObjects:
  djnz resAllObjects
  ret
  
+drawObjectNoReset:
+ ld a,$c9 ;ret = $c9
+ ld (smcRedrawReset),a
 ;input: ix = data ptr to object
 ;note: no guarantees on data ptr validity on return
 ;note: only sets 1st bit
@@ -1864,9 +1961,9 @@ drawTextLoop:
  ld b,h
  inc b
  ld c,$08
-shiftLoop:
+shiftCTXT:
  rlc c
- djnz shiftLoop
+ djnz shiftCTXT
  rrc c
  ;c=2^bpp*8
  ld b,a
@@ -2160,7 +2257,7 @@ menuLoop:
  
  ld ix,buttonQuit
  call checkKeyDown
- jp c,exit
+ jp c,exit ;early exit option (will end program)
  jr menuLoop ;only redraw if something happens
 
 menuDraw:
@@ -2177,6 +2274,8 @@ menuDraw:
  ld ix,(menuDataPTR)
  call drawObjectsNoReset ;never stop drawing menu objects. 
  call swapVRamPTR
+ ld ix,(menuDataPTR)
+ call drawObjectsNoReset
  
  jr menuLoop
  
@@ -2215,6 +2314,88 @@ smcLoadJumpTable:
  
  jp (hl)
  ret ;ha
+
+numberSelection:
+.db 0
+setNumberPTR:
+.dl 0
+setVarPTR:
+.dl 0
+;setVarPTR is the pointer to the variable being
+;modified by setNumber.
+;or, what is being "selected."
+
+setNumber:
+ ;ix points to data
+ ld (setNumberPTR),ix
+
+ or a,a
+ sbc hl,hl ;hl=0
+ ld h,(ix+iDataPTRH)
+ ld l,(ix+iDataPTRL)
+ ld de,PSS
+ add hl,de
+ ld (setVarPTR),hl ;points to variable to set
+ 
+ xor a,a
+ ld (numberSelection),a ;default: 0
+ 
+ ld ix, buttonConfirm
+ call waitNoButton ;wait for no confirmation press
+ 
+setNumberLoop:
+ call scanKeys
+ 
+ ld ix,buttonback
+ call checkKeyDown
+ jr c, setNumberFinal ;return from setNumber
+
+ ld ix,buttonLeft
+ call checkKeyDown
+ jr c, setNumDown
+ 
+ ld ix,buttonRight
+ call checkKeyDown
+ jr c, setNumUp
+
+ ld ix,buttonQuit
+ call checkKeyDown
+ jp c,exit ;early exit option (will end program)
+ jr setNumberLoop ;only redraw if something happens
+ 
+setNumDown:
+ ld a,(numberSelection)
+ dec a
+ ld (numberSelection),a
+ jr setNumDraw
+ 
+setNumUp:
+ ld a,(numberSelection)
+ inc a
+ ld (numberSelection),a
+ ;jr setNumDraw
+ 
+setNumDraw:
+ call updateSetNum
+ 
+ ld ix,(setNumberPTR)
+ call drawObjectNoReset
+ call swapVRamPTR
+ ld ix,(setNumberPTR)
+ call drawObjectNoReset
+ jr setNumberLoop
+ 
+updateSetNum:
+ ld hl,(setVarPTR)
+ ld a,(numberSelection)
+ ld (hl),a
+ ret
+ 
+setNumberFinal: ;just wait for confirm to be released, then end
+ ld ix, buttonBack
+ call waitNoButton
+ 
+ ret ;return from setNumber call
  
 randsav:
  .db 0,0,0,0
@@ -2392,6 +2573,8 @@ buttondown:
 .db 48, noRepeat, noRepeat, 0
 buttonconfirm:
 .db 5, noRepeat, noRepeat, 0
+buttonback:
+.db 15, noRepeat, noRepeat, 0
 buttonquit:
 .db 7, noRepeat, noRepeat, 0
 
@@ -2448,7 +2631,29 @@ resetTimer:
  ld a,0
  ld (ix+buttonTimer),a
  ret
+
+;ix points to button info
+;wait for no press of selected button
+;note: ix will still point to button data after
+;being called
+waitNoButton:
+ call scanKeys
+
+ call checkKeyDown
+ jr c, waitNoButton ;wait for no selection
+ ret
  
+;waits for button press
+;ix points to button info
+;note: ix will still point to button data after
+;function ends
+waitButton:
+ call scanKeys
+
+ call checkKeyDown
+ jr nc, waitNoButton ;wait for selection
+ ret 
+
 ;source: http://wikiti.brandonw.net/index.php?title=84PCE:Ports:A000
 ;I get how this works in theory
 ;but it's still sketchy to me
@@ -2650,8 +2855,6 @@ typeSprite4bpp=9
 typeSprite2bpp=10
 typeSprite1bpp=11
 
-sprite
-
 boxColor = 14
 boxColor2= 15
 textColor= 35
@@ -2771,8 +2974,60 @@ menuText:
  .db "START",0
  .db "EXIT",0
 menuJumps:
- jp initGame
+ jp setupGame
  jp exit
+
+setupGame:
+ ld ix, startMenuData
+ call activeMenu
+ ret ;return from main menu
+ 
+startMenuData:
+ .db 4
+  ;background
+ .db typeBox
+ .dw 0 ;x
+ .db 0 ;y
+ .db 2 ;color
+ .dw 80 ;width
+ .db 1, 32 ;bordercolor, height
+ ;menu text
+ .db typeMenu
+ .dw 8
+ .db 8
+ .db textColor
+ .dw startMenuText - SSSCopiedData
+ .db 2, 2 ;# items, cursorID within menuObjData
+ ;cursor
+ .db typeString
+ .dw 0
+ .db 8
+ .db textColor
+ .dw cursorString - SSSCopiedData
+ .db 0, 0
+
+startMenuSelectLev:
+ .db typeNumber
+ .dw 56
+ .db 8
+ .db textColor
+ .dw level - PSS
+ .db 3, 2 ;digits, bgcolor
+ 
+startMenuText:
+ .db "LEVEL:",0
+ .db "BEGIN",0
+startMenuJumps:
+ jp selectLev
+ jp initGame ;starts game
+
+selectLev:
+ ld ix, startMenuSelectLev
+ call setNumber
+ pop hl ;this is call to activeMenu
+ ld hl, menuDraw
+ push hl ;return INTO activemenu, starting with draw code
+ ret ;return to menuDraw
  
 pauseData:
  .db 2
@@ -2812,37 +3067,37 @@ blockData:
  .db -1, 0
  .db  0, 0
  .db  1, 0
- .db  1, 8
+ .db  0, 8
 ;J piece
  .db -1, 0
  .db  0, 0
  .db  1, 0
  .db  1,-1
- .db  2, 12
+ .db  0, 12
 ;O piece
  .db  0,-1
  .db  1,-1
  .db  1, 0
  .db  0, 0
- .db  3, 16
+ .db  0, 16
 ;S piece
  .db -1, 0
  .db  0, 0
  .db  0,-1
  .db  1,-1
- .db  4, 20
+ .db  0, 20
 ;T piece
  .db  0, 0
  .db -1, 0
  .db  0,-1
  .db  1, 0
- .db  5, 24
+ .db  0, 24
 ;Z piece
  .db -1,-1
  .db  0,-1
  .db  0, 0
  .db  1, 0
- .db  6, 28
+ .db  0, 28
 
 ;wall kicks and rotation data
 kicksNormal:
@@ -2872,97 +3127,62 @@ sp4bpp = 2
 sp8bpp = 3
  
 spriteData:
-;testing cooler script
-.db $1, $1, $1, $1, $1, $1, $1, $1, $1, $1, $1, $2
-.db $1, $1, $1, $1, $1, $1, $1, $1, $1, $1, $2, $3
-.db $1, $1, $2, $2, $2, $2, $2, $2, $2, $2, $3, $3
-.db $1, $1, $2, $2, $2, $2, $2, $2, $2, $2, $3, $3
-.db $1, $1, $2, $2, $2, $2, $2, $2, $2, $2, $3, $3
-.db $1, $1, $2, $2, $2, $2, $2, $2, $2, $2, $3, $3
-.db $1, $1, $2, $2, $2, $2, $2, $2, $2, $2, $3, $3
-.db $1, $1, $2, $2, $2, $2, $2, $2, $2, $2, $3, $3
-.db $1, $1, $2, $2, $2, $2, $2, $2, $2, $2, $3, $3
-.db $1, $1, $2, $2, $2, $2, $2, $2, $2, $2, $3, $3
-.db $1, $2, $3, $3, $3, $3, $3, $3, $3, $3, $3, $3
-.db $2, $3, $3, $3, $3, $3, $3, $3, $3, $3, $3, $3
+.db sp2bpp
+;default
+.db $55,$55,$56
+.db $55,$55,$5b
+.db $5a,$aa,$af
+.db $5a,$aa,$af
+.db $5a,$aa,$af
+.db $5a,$aa,$af
+.db $5a,$aa,$af
+.db $5a,$aa,$af
+.db $5a,$aa,$af
+.db $5a,$aa,$af
+.db $6f,$ff,$ff
+.db $bf,$ff,$ff
 
-.db 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1
-.db 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2
-.db 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2
-.db 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2
-.db 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2
-.db 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2
-.db 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2
-.db 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3
-.db 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3
-.db 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3
-.db 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3
-.db 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3
+;wires
+.db $00,$00,$00
+.db $15,$55,$54
+.db $10,$00,$04
+.db $12,$aa,$84
+.db $12,$00,$84
+.db $12,$3c,$84
+.db $12,$3c,$84
+.db $12,$00,$84
+.db $12,$aa,$84
+.db $10,$00,$04
+.db $15,$55,$54
+.db $00,$00,$00
 
-.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-.db 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0
-.db 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0
-.db 0, 1, 0, 2, 2, 2, 2, 2, 2, 0, 1, 0
-.db 0, 1, 0, 2, 0, 0, 0, 0, 2, 0, 1, 0
-.db 0, 1, 0, 2, 0, 3, 3, 0, 2, 0, 1, 0
-.db 0, 1, 0, 2, 0, 3, 3, 0, 2, 0, 1, 0
-.db 0, 1, 0, 2, 0, 0, 0, 0, 2, 0, 1, 0
-.db 0, 1, 0, 2, 2, 2, 2, 2, 2, 0, 1, 0
-.db 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0
-.db 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0
-.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+;square
+.db $00,$00,$00
+.db $15,$55,$54
+.db $1a,$aa,$a4
+.db $1b,$ff,$e4
+.db $1b,$ff,$e4
+.db $1b,$ff,$e4
+.db $1b,$ff,$e4
+.db $1b,$ff,$e4
+.db $1b,$ff,$e4
+.db $1a,$aa,$a4
+.db $15,$55,$54
+.db $00,$00,$00
 
-.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-.db 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0
-.db 0, 1, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0
-.db 0, 1, 2, 3, 3, 3, 3, 3, 3, 2, 1, 0
-.db 0, 1, 2, 3, 3, 3, 3, 3, 3, 2, 1, 0
-.db 0, 1, 2, 3, 3, 3, 3, 3, 3, 2, 1, 0
-.db 0, 1, 2, 3, 3, 3, 3, 3, 3, 2, 1, 0
-.db 0, 1, 2, 3, 3, 3, 3, 3, 3, 2, 1, 0
-.db 0, 1, 2, 3, 3, 3, 3, 3, 3, 2, 1, 0
-.db 0, 1, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0
-.db 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0
-.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-
-.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-.db 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0
-.db 0, 1, 1, 2, 2, 1, 1, 2, 2, 1, 1, 0
-.db 0, 1, 1, 2, 2, 1, 1, 2, 2, 1, 1, 0
-.db 0, 1, 1, 2, 2, 1, 1, 2, 2, 1, 1, 0
-.db 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0
-.db 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0
-.db 0, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 0
-.db 0, 1, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0
-.db 0, 1, 1, 2, 2, 2, 2, 2, 2, 1, 1, 0
-.db 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0
-.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-
-.db 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2
-.db 0, 0, 0, 0, 1, 1, 2, 2, 2, 2, 2, 2
-.db 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2
-.db 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 1
-.db 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 1, 1
-.db 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1
-.db 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1
-.db 2, 2, 2, 0, 0, 0, 0, 0, 0, 3, 3, 3
-.db 2, 2, 2, 2, 0, 0, 3, 3, 3, 3, 3, 3
-.db 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3
-.db 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3
-.db 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3
-
-.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-.db 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
-.db 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1
-.db 1, 2, 2, 3, 3, 3, 3, 3, 3, 3, 2, 1
-.db 1, 2, 3, 3, 3, 3, 3, 3, 3, 2, 2, 1
-.db 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1
-.db 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+;rounded
+.db $05,$55,$50
+.db $15,$6a,$ac
+.db $56,$aa,$af
+.db $5a,$aa,$af
+.db $5a,$aa,$af
+.db $6a,$aa,$af
+.db $6a,$aa,$af
+.db $6a,$aa,$bf
+.db $6a,$aa,$bf
+.db $6a,$ab,$ff
+.db $3f,$ff,$fc
+.db $0f,$ff,$f0
 
 fontData:
 ;bits per pixel
