@@ -57,12 +57,13 @@ timerT = PSS + 336
 lockTimer = PSS + 340
 
 rules = PSS + 512
+
 rbitGameCont = 0
 rbitGameEndless = 1
 rbitSRSEnabled = 2
 rbitPreviewEnabled = 3
 rbitHoldEnabled = 4
-rbitHardDropEnabled =5
+rbitHardDropEnabled = 5
 
 ;graphical and data resources
 ;note: info must be RELOCATED to this location.
@@ -77,6 +78,16 @@ main:
  ld (preserveSP),sp
  call initLCD
  call initData
+ 
+ ld b,64
+rkeys:
+ push bc
+ ld a,b
+ dec a
+ call checkKeyDown
+ pop bc
+ djnz rkeys
+ 
  call loadSave
  ld (saveDataPTR),de
  
@@ -97,8 +108,7 @@ saveDataPTR:
 
 mainMenu:
  ld ix,(drefMenu)
- call activeMenu
- ret
+ jp activeMenu
  
 initGame:
  ld a,0
@@ -106,12 +116,6 @@ initGame:
  
  ld a,7
  ld (holdT),a
- 
- ld ix,rules
- set rbitGameCont,(ix+0)        ;game is going
- set rbitSRSEnabled,(ix+0)      ;use srs
- set rbitHoldEnabled,(ix+0)     ;use hold
- set rbitHardDropEnabled,(ix+0) ;allow hard drop
  
  ;clear field
  ld hl,field
@@ -2190,10 +2194,13 @@ menuPTR:
 .dl 0
 cursorPTR:
 .dl 0
- 
+  
 ;input:
 ;ix is ptr to active display menudata
 activeMenu:
+ ld a,0
+ ld (menuSelection),a
+ 
  ld (menuDataPTR),ix
  inc ix ;go past # elements
  
@@ -2232,20 +2239,20 @@ scanToMenuJumps:
  add hl,bc ;hl=ix+size*cursorID or, offset to cursor data
  ld (cursorPTR),hl
  
-menuWaitNoInput:
- call scanKeys
- 
  ld ix,buttonConfirm
- call checkKeyDown
- jr c, menuWaitNoInput ;wait for no selection
+ call waitNoButton
  jr menuDraw
-  
+ 
 menuLoop:
  call scanKeys
  
  ld ix,buttonConfirm
  call checkKeyDown
- jr c,menuSelect
+ jp c,menuSelect
+ 
+ ld ix,buttonBack
+ call checkKeyDown
+ jp c,amenuEnd
  
  ld ix,buttonUp
  call checkKeyDown
@@ -2289,20 +2296,22 @@ menuUp:
  
 menuDown:
  ld a,(menuSelection)
- ld b,a
- ld ix,(menuPTR)
- ld a,(ix+iDataW)
- dec a
- dec a
- cp b
- jr c, menuDraw ;don't go past end of list
  inc a
+ ld ix,(menuPTR)
+ cp (ix+iDataW) ;# items
+ jr nc, menuDraw ;don't go past end of list
  ld (menuSelection),a
  jr menuDraw
+
+amenuEnd:
+ ;uh
+ ld a,$FF
+ ld (menuSelection),a ;yeah
  
-menuSelect:
+menuSelect: 
  ld de,0
  ld a,(menuSelection)
+ inc a
  ld e,a
  
 smcLoadJumpTable:
@@ -2313,8 +2322,7 @@ smcLoadJumpTable:
  add hl,de
  
  jp (hl)
- ret ;ha
-
+ 
 numberSelection:
 .db 0
 setNumberPTR:
@@ -2394,7 +2402,6 @@ updateSetNum:
 setNumberFinal: ;just wait for confirm to be released, then end
  ld ix, buttonBack
  call waitNoButton
- 
  ret ;return from setNumber call
  
 randsav:
@@ -2769,6 +2776,7 @@ initData:
  ldir
  ret
  
+;labels should be calculated relative to SSS
 SSSCopiedData:
 ;these data references are pointers to pointers
 ;example: 
@@ -2974,16 +2982,16 @@ menuText:
  .db "START",0
  .db "EXIT",0
 menuJumps:
+ jp exit ;first item is prev menu, if exists
  jp setupGame
  jp exit
 
 setupGame:
  ld ix, startMenuData
- call activeMenu
- ret ;return from main menu
+ jp activeMenu
  
 startMenuData:
- .db 4
+ .db 5
   ;background
  .db typeBox
  .dw 0 ;x
@@ -2997,6 +3005,67 @@ startMenuData:
  .db 8
  .db textColor
  .dw startMenuText - SSSCopiedData
+ .db 3, 2 ;# items, cursorID within menuObjData
+ ;cursor
+ .db typeString
+ .dw 0
+ .db 8
+ .db textColor
+ .dw cursorString - SSSCopiedData
+ .db 0, 0
+startMenuSelectMode:
+ .db typeString
+ .dw 48
+ .db 8
+ .db textColor
+ .dw MARATHON
+ .db 0, 1
+startMenuSelectLev:
+ .db typeNumber
+ .dw 56
+ .db 16
+ .db textColor
+ .dw level - PSS
+ .db 3, 2 ;digits, bgcolor
+ 
+startMenuText:
+ .db "Mode:",0
+ .db "Level:",0
+ .db "BEGIN",0
+startMenuJumps:
+ jp mainMenu ;example of prev menu jump
+ jp selectMode
+ jp selectLev
+ jp initGame ;starts game
+ 
+selectLev:
+ ld ix, startMenuSelectLev
+ call setNumber
+ 
+ ;after setting number,
+ ;return to main start menu.
+ ld ix, startMenuData
+ jp activeMenu
+ 
+selectMode:
+ ld ix, selectModeMenu
+ jp activeMenu
+ 
+selectModeMenu:
+ .db 3
+ ;background
+ .db typeBox
+ .dw 0 ;x
+ .db 0 ;y
+ .db 9 ;color
+ .dw 120 ;width
+ .db 10, 32 ;bordercolor, height
+ ;menu text
+ .db typeMenu
+ .dw 8
+ .db 8
+ .db textColor
+ .dw modeText - SSSCopiedData
  .db 2, 2 ;# items, cursorID within menuObjData
  ;cursor
  .db typeString
@@ -3006,28 +3075,45 @@ startMenuData:
  .dw cursorString - SSSCopiedData
  .db 0, 0
 
-startMenuSelectLev:
- .db typeNumber
- .dw 56
- .db 8
- .db textColor
- .dw level - PSS
- .db 3, 2 ;digits, bgcolor
- 
-startMenuText:
- .db "LEVEL:",0
- .db "BEGIN",0
-startMenuJumps:
- jp selectLev
- jp initGame ;starts game
+modeText:
+MARATHON = $ - SSSCopiedData
+.db "MARATHON",0
+RETRO = $ - SSSCopiedData
+.db "RETRO",0
+modeJumps:
+ jp setupGame ;prev menu
+ jp marathonInit
+ jp retroInit
 
-selectLev:
- ld ix, startMenuSelectLev
- call setNumber
- pop hl ;this is call to activeMenu
- ld hl, menuDraw
- push hl ;return INTO activemenu, starting with draw code
- ret ;return to menuDraw
+marathonInit:
+ ld ix,rules
+ ;can be optimized by just loading a value
+ set rbitGameCont,(ix+0)        ;game is going
+ set rbitSRSEnabled,(ix+0)      ;use srs
+ set rbitPreviewenabled,(ix+0)  ;use preview
+ set rbitHoldEnabled,(ix+0)     ;use hold
+ set rbitHardDropEnabled,(ix+0) ;allow hard drop
+ 
+ ld hl,MARATHON
+ ld (startMenuSelectMode + iDataPTRL),hl
+ 
+ ld ix, startMenuData
+ jp activeMenu ;returns from activeMenu
+ 
+retroInit:
+ ld ix,rules
+ ;can be also optimized later
+ set rbitGameCont,(ix+0)        ;game is going
+ res rbitSRSEnabled,(ix+0)      ;use srs
+ res rbitPreviewenabled,(ix+0)  ;use preview
+ res rbitHoldEnabled,(ix+0)     ;use hold
+ res rbitHardDropEnabled,(ix+0) ;allow hard drop
+
+ ld hl,RETRO
+ ld (startMenuSelectMode + iDataPTRL),hl
+ 
+ ld ix, startMenuData
+ jp activeMenu ;returns from activeMenu
  
 pauseData:
  .db 2
