@@ -58,12 +58,33 @@ lockTimer = PSS + 340
 
 rules = PSS + 512
 
+rfBasic = 0 ;basic mechanics
+rfExtra = 1 ;extra mechanics
+
 rbitGameCont = 0
 rbitGameEndless = 1
 rbitSRSEnabled = 2
 rbitPreviewEnabled = 3
 rbitHoldEnabled = 4
 rbitHardDropEnabled = 5
+
+rbitCascadeGravity = 0
+
+rNull = 0
+rGame = 1 << rbitGameCont
+rEndless = 1 << rbitGameEndless
+rSRS = 1 << rbitSRSEnabled
+rPreview = 1 << rbitPreviewEnabled
+rHold = 1 << rbitHoldEnabled 
+rHardDrop = 1 << rbitHardDropEnabled
+
+rCascade = 1 << rbitCascadeGravity
+
+rMarathon = rGame | rSRS | rPreview | rHold | rHardDrop
+rRetro = rGame
+
+blockData = PSS + 768
+buttonData = PSS + 1024
 
 ;graphical and data resources
 ;note: info must be RELOCATED to this location.
@@ -78,15 +99,9 @@ main:
  ld (preserveSP),sp
  call initLCD
  call initData
+ call initKeyTimer
  
- ld b,64
-rkeys:
- push bc
- ld a,b
- dec a
- call checkKeyDown
- pop bc
- djnz rkeys
+ call defaultInfo
  
  call loadSave
  ld (saveDataPTR),de
@@ -105,6 +120,12 @@ preserveSP:
 .dl 0
 saveDataPTR:
 .dl 0
+
+defaultInfo:
+ ld ix,rules
+ ld (ix+rfBasic), rMarathon
+ ld (ix+rfExtra), rNull ;no extra rules
+ ret 
 
 mainMenu:
  ld ix,(drefMenu)
@@ -128,6 +149,7 @@ initGame:
  call newBlock
  
  ;first draw to set up screen
+ call clearLCD
  ld ix,(drefIInfo)
  call resetAllDrawCheck
  ld ix,(drefIInfo)
@@ -146,6 +168,7 @@ game:
  call shiftOldData
  ;part of update code, essentially
  ;might move to update sometime
+ 
  call userUpdate
  call update
  call drawGame
@@ -153,7 +176,7 @@ game:
  ld ix,rules
  bit rBitGameCont, (ix+0)
  jr nz, game ;jump if nz: bit is 1, game is going
- ret
+ jp exit
 
 shiftOldData:
  ;copy old mino data
@@ -1086,6 +1109,7 @@ initLCD:
  ld a,4
  ld (mpLcdIcr),a
  
+clearLCD:
  ld hl, vRam
  ld de, vRam+1
  ld bc, vRamEnd - vRam
@@ -2198,6 +2222,7 @@ cursorPTR:
 ;input:
 ;ix is ptr to active display menudata
 activeMenu:
+ call clearLCD
  ld a,0
  ld (menuSelection),a
  
@@ -2555,35 +2580,54 @@ buttonID=0
 buttonTimeStart=1
 buttonTimeRepeat=2
 buttonTimer=3
+buttonDataSize=4
+
+buttonLeft = 0 * buttonDataSize + buttonData
+buttonRight = 1 * buttonDataSize + buttonData
+buttonSoft = 2 * buttonDataSize + buttonData
+buttonHard = 3 * buttonDataSize + buttonData
+buttonRotateLeft = 4 * buttonDataSize + buttonData
+buttonRotateRight = 5 * buttonDataSize + buttonData
+buttonHold = 6 * buttonDataSize + buttonData
+buttonPause = 7 * buttonDataSize + buttonData
+
+buttonUp = 8 * buttonDataSize + buttonData
+buttonDown = 9 * buttonDataSize + buttonData
+buttonConfirm = 10 * buttonDataSize + buttonData
+buttonBack = 11 * buttonDataSize + buttonData
+buttonQuit = 12 * buttonDataSize + buttonData
+
 noRepeat = -1
 
-buttonleft:
+PSS1024CopiedData:
+;buttonleft:
 .db 49, 7, 2, 0
-buttonright:
+;buttonright:
 .db 50, 7, 2, 0
-buttonsoft:
+;buttonsoft:
 .db 48, 0, 3, 0
-buttonhard:
+;buttonhard:
 .db 51, noRepeat, noRepeat, 0
-buttonrotateleft:
+;buttonrotateleft:
 .db 5, noRepeat, noRepeat, 0
-buttonrotateright:
+;buttonrotateright:
 .db 15, noRepeat, noRepeat, 0
-buttonhold:
+;buttonhold:
 .db 23, noRepeat, noRepeat, 0
-buttonpause:
+;buttonpause:
 .db 6, noRepeat, noRepeat, 0
 
-buttonup:
+;buttonup:
 .db 51, noRepeat, noRepeat, 0
-buttondown:
+;buttondown:
 .db 48, noRepeat, noRepeat, 0
-buttonconfirm:
+;buttonconfirm:
 .db 5, noRepeat, noRepeat, 0
-buttonback:
+;buttonback:
 .db 15, noRepeat, noRepeat, 0
-buttonquit:
+;buttonquit:
 .db 7, noRepeat, noRepeat, 0
+PSS1024CopiedDataEnd:
 
 ;ix = ptr to key data to check
 checkKeyDown:
@@ -2661,6 +2705,17 @@ waitButton:
  jr nc, waitNoButton ;wait for selection
  ret 
 
+initKeyTimer:
+ ld b,64
+rkeys:
+ push bc
+ ld a,b
+ dec a
+ call checkKeyDown
+ pop bc
+ djnz rkeys
+ ret
+ 
 ;source: http://wikiti.brandonw.net/index.php?title=84PCE:Ports:A000
 ;I get how this works in theory
 ;but it's still sketchy to me
@@ -2773,6 +2828,16 @@ initData:
  ld hl,SSSCopiedData
  ld de,SSS
  ld bc,SSSCopiedDataEnd - SSSCopiedData
+ ldir
+ 
+ ld hl,PSS768CopiedData
+ ld de,blockData
+ ld bc,PSS768CopiedDataEnd - PSS768CopiedData
+ ldir
+ 
+ ld hl,PSS1024CopiedData
+ ld de,buttonData
+ ld bc,PSS1024CopiedDataEnd - PSS1024CopiedData
  ldir
  ret
  
@@ -3087,12 +3152,8 @@ modeJumps:
 
 marathonInit:
  ld ix,rules
- ;can be optimized by just loading a value
- set rbitGameCont,(ix+0)        ;game is going
- set rbitSRSEnabled,(ix+0)      ;use srs
- set rbitPreviewenabled,(ix+0)  ;use preview
- set rbitHoldEnabled,(ix+0)     ;use hold
- set rbitHardDropEnabled,(ix+0) ;allow hard drop
+ ld (ix+rfBasic), rMarathon
+ ld (ix+rfExtra), rNull ;no extra rules
  
  ld hl,MARATHON
  ld (startMenuSelectMode + iDataPTRL),hl
@@ -3102,12 +3163,8 @@ marathonInit:
  
 retroInit:
  ld ix,rules
- ;can be also optimized later
- set rbitGameCont,(ix+0)        ;game is going
- res rbitSRSEnabled,(ix+0)      ;use srs
- res rbitPreviewenabled,(ix+0)  ;use preview
- res rbitHoldEnabled,(ix+0)     ;use hold
- res rbitHardDropEnabled,(ix+0) ;allow hard drop
+ ld (ix+rfBasic), rRetro
+ ld (ix+rfExtra), rNull ;no extra rules
 
  ld hl,RETRO
  ld (startMenuSelectMode + iDataPTRL),hl
@@ -3131,6 +3188,7 @@ pauseData:
  .db textColor
  .dw pauseText - SSSCopiedData
  .db 2, 0
+ 
 ;note: cursorID does not apply
 ;if active menu is not called
  
@@ -3142,7 +3200,7 @@ pauseText:
 spriteID = 8
 spritePAL= 9
 ;I piece
-blockData:
+PSS768CopiedData:
  .db -1, 0
  .db  0, 0
  .db  1, 0
@@ -3184,7 +3242,8 @@ blockData:
  .db  0, 0
  .db  1, 0
  .db  0, 28
-
+PSS768CopiedDataEnd:
+ 
 ;wall kicks and rotation data
 kicksNormal:
  .db  0, 0,  0, 0,  0, 0,  0, 0,  0, 0  
