@@ -55,11 +55,23 @@ lines = PSS + 328
 linesToNextLevel = PSS + 332
 timerT = PSS + 336
 lockTimer = PSS + 340
+globalTimer = PSS + 344
+
+;data for various rules, stored as offset from rules
+;garbage set
+rRGT = -1 ;rising garbage timer
+rRGD = -2;rising garbage density
+;generated set
+rGGT = -1;generated garbage amt
+rGGD = -2 ;generated garbage density
+;line clear data
+rLCW = -3;lines needed to clear to win
 
 rules = PSS + 512
 
 rfBasic = 0 ;basic mechanics
 rfExtra = 1 ;extra mechanics
+rfWin = 2 ;win condition currently set
 
 rbitGameCont = 0
 rbitGameEndless = 1
@@ -69,6 +81,11 @@ rbitHoldEnabled = 4
 rbitHardDropEnabled = 5
 
 rbitCascadeGravity = 0
+rbitGarbageRising = 1
+rbitGarbageInitial = 2
+
+rbitLinesClear = 0
+rbitRow0Clear = 1 ;for garbage/generated games
 
 rNull = 0
 rGame = 1 << rbitGameCont
@@ -79,10 +96,17 @@ rHold = 1 << rbitHoldEnabled
 rHardDrop = 1 << rbitHardDropEnabled
 
 rCascade = 1 << rbitCascadeGravity
+rRising = 1 << rbitGarbageRising
+rGenerated = 1 << rbitGarbageInitial
+
+rLines = 1 << rbitLinesClear
+rRow0 = 1 << rbitRow0Clear
 
 rMarathon = rGame | rSRS | rPreview | rHold | rHardDrop
 rRetro = rGame
 
+rLC150 = 150
+rLC200 = 200
 blockData = PSS + 768
 buttonData = PSS + 1024
 
@@ -91,7 +115,6 @@ buttonData = PSS + 1024
 SSS = saveSScreen
 
 ;bit set/reset when an object must be updated
-;max redraw is 3 times
 redrawObjBit = 7
 
 ;main program
@@ -125,6 +148,16 @@ defaultInfo:
  ld ix,rules
  ld (ix+rfBasic), rMarathon
  ld (ix+rfExtra), rNull ;no extra rules
+ ld (ix+rfWin), rLines
+ 
+ xor a
+ ld (ix+rRGT),a
+ ld (ix+rRGD),a
+ ld (ix+rLCW),rLC150
+ 
+ inc a ;a=1
+ ld hl, level
+ ld (hl),a
  ret 
 
 mainMenu:
@@ -172,6 +205,13 @@ game:
  call userUpdate
  call update
  call drawGame
+ 
+ ld hl,(globalTimer)
+ inc hl
+ ld (globalTimer),hl
+ 
+ ld hl, (refTimer)
+ res redrawObjBit, (hl)
  
  ld ix,rules
  bit rBitGameCont, (ix+0)
@@ -306,6 +346,20 @@ update:
  bit csNewBlockBit, (hl) ;request new block
  call nz, newBlock ;if set, create block
  
+ ld hl, rules+rfWin
+ bit rbitLinesClear, (hl)
+ jr z, skipEndCheck
+ ;check if lines cleared is less than lines needed
+ ld a,(lines)
+ ld hl, rules+rLCW
+ cp (hl) ;nc (hl)<=a ;c (hl)>a
+ jr c, skipEndCheck
+ ;game has ended, player won
+ ld hl, rules
+ res rbitGameCont, (hl)
+ 
+skipEndCheck:
+ 
  ld hl,(timerT)
  inc hl
  ld (timerT),hl
@@ -416,10 +470,6 @@ lockAllBlocks:
  set csNewBlockBit,(hl) ;new block should be created
  ;
  
- ;call checkBlockDownOK
- ;cp 0
- ;jr z,gameEnd
- ;if block check fails immediately, it's a top out
  ret
 gameEnd:
  ld ix,rules
@@ -576,6 +626,11 @@ newBlock:
  ld a,(ix+spritePAL)
  ld a,(curT) ;ensure copied blockdata is CORRECT?
  call copyBlockData
+ 
+ call checkBlockDownOK
+ cp 0
+ call z,gameEnd
+ ;if block check fails immediately, it's a top out
  ret
  
 ;a=block type
@@ -2348,6 +2403,36 @@ smcLoadJumpTable:
  
  jp (hl)
  
+;uses (menuSelection) and (menuPTR) to get string ptr
+getStringPTRSelection:
+ ld ix,(menuPTR)
+ 
+ ld hl,0
+ ld h,(ix+iDataPTRH)
+ ld l,(ix+iDataPTRL)
+ ld de,SSS
+ add hl,de
+ 
+ ld a,(menuSelection)
+ or a,a
+ jr z, ptrOK ;selection is found
+ 
+ ld b,a
+scanMenuText:
+ ld a,(hl)
+ inc hl
+ or a,a ;cp 0
+ jr nz, scanMenuText
+ ;gets here after a 0 is found
+ djnz scanMenuText
+ 
+ptrOK:
+ ;pointer is found to string
+ ;hl = pointer
+ or a,a
+ sbc hl,de ;hl=ofs from SSS
+ ret
+ 
 numberSelection:
 .db 0
 setNumberPTR:
@@ -2527,7 +2612,7 @@ randInit:
 rand:
  ld de,(randseed)
  ld a,(randinput)
- cp 0
+ bit 0,a
  call nz,randXOR
  ld a,(randinput)
  ld l,a
@@ -2545,28 +2630,6 @@ randXOR:
  ld a,%10110100 ;this is the ideal set of bits to invert for a maximal cycle, apparently.
  xor d
  ld d,a
- ret
-
-;old-new random
-random:
- ld hl,randsav
- ld a,r
- and $03
- ld b,a ;id
- inc b
-randIncSav:
- inc hl
- djnz randIncSav
- dec hl
- 
- ;hl is one of four random slots
- ld a,(hl)
- inc a
- ld (hl),a
- cp RANDOM_NULL
- ret nz
- ld a,0
- ld (hl),a
  ret
  
 ;key registers read to here
@@ -2893,6 +2956,7 @@ references:
 .dl scoreInfo + iDataSize - itemsInfo + SSSInfo
 .dl linesInfo + iDataSize - itemsInfo + SSSInfo
 .dl charInfo - itemsInfo + SSSInfo
+.dl timerInfo - itemsInfo + SSSInfo
 
 refSize = 3
 refOfs = references - SSSCopiedData + SSS
@@ -2902,6 +2966,7 @@ refLevel = refSize * 2 + refOfs
 refScore = refSize * 3 + refOfs
 refLines = refSize * 4 + refOfs
 refChar = refSize * 5 + refOfs
+refTimer = refSize * 6 + refOfs
 
 ;various equates for itemsInfo
 iDataType 	= 0 ;type of data (use type~ to check)
@@ -2998,11 +3063,12 @@ linesInfo:
 .dw lines - PSS
 .db 4, boxcolor ;number of digits, bgcolor
 ;DEBUG TEXT
+timerInfo:
 .db typeNumber
 .dw 204
 .db 80
 .db textColor
-.dw timerT - PSS
+.dw globalTimer - PSS
 .db 3, boxcolor
 
 scoreText:
@@ -3083,7 +3149,7 @@ startMenuSelectMode:
  .dw 48
  .db 8
  .db textColor
- .dw MARATHON
+ .dw modeText - SSSCopiedData
  .db 0, 1
 startMenuSelectLev:
  .db typeNumber
@@ -3131,7 +3197,7 @@ selectModeMenu:
  .db 8
  .db textColor
  .dw modeText - SSSCopiedData
- .db 2, 2 ;# items, cursorID within menuObjData
+ .db 8, 2 ;# items, cursorID within menuObjData
  ;cursor
  .db typeString
  .dw 0
@@ -3141,36 +3207,66 @@ selectModeMenu:
  .db 0, 0
 
 modeText:
-MARATHON = $ - SSSCopiedData
-.db "MARATHON",0
-RETRO = $ - SSSCopiedData
-.db "RETRO",0
+.db "MARATHON-150",0
+.db "MARATHON-200",0
+.db "MARATHON-ENDLESS",0
+.db "RETRO-150",0
+.db "RETRO-200",0
+.db "RETRO-ENDLESS",0
+.db "LINE RACE-40",0
+.db "LINE RACE-20",0
 modeJumps:
  jp setupGame ;prev menu
- jp marathonInit
- jp retroInit
-
-marathonInit:
+ ;note: ld a,x/jr setLines = 4byte alignment
+ ld a,150
+ jr setMarathon
+ ld a,200
+ jr setMarathon
+ ld a,0
+ jr setMarathon
+ ld a,150
+ jr setRetro
+ ld a,200
+ jr setRetro
+ ld a,0
+ jr setRetro
+ ld a,40
+ jr setLineRace
+ ld a,20
+ jr setLineRace
+ 
+setLineRace: ;very similar haha
+setMarathon:
  ld ix,rules
  ld (ix+rfBasic), rMarathon
  ld (ix+rfExtra), rNull ;no extra rules
+ ld (ix+rfWin), rLines ;win on line-clears
+ jr setLines
  
- ld hl,MARATHON
- ld (startMenuSelectMode + iDataPTRL),hl
- 
- ld ix, startMenuData
- jp activeMenu ;returns from activeMenu
- 
-retroInit:
+setRetro:
  ld ix,rules
  ld (ix+rfBasic), rRetro
  ld (ix+rfExtra), rNull ;no extra rules
-
- ld hl,RETRO
- ld (startMenuSelectMode + iDataPTRL),hl
+ ld (ix+rfWin), rLines ;win on line-clears
+ jr setLines
  
- ld ix, startMenuData
- jp activeMenu ;returns from activeMenu
+setLines: 
+ cp 0
+ jr z, setNoLines
+ ld (ix+rLCW),a
+
+ ;return to setup menu
+slToMenu:
+ ;replaces selected mode string
+ call getStringPTRSelection
+ ld (startMenuSelectMode + iDataPTRL),hl
+
+ ld ix, startMenuData 
+ jp activeMenu
+ 
+setNoLines:
+ ld (ix+rfWin),a ;a=0
+ jr slToMenu
  
 pauseData:
  .db 2
@@ -3191,6 +3287,9 @@ pauseData:
  
 ;note: cursorID does not apply
 ;if active menu is not called
+;so, typeMenu can also simply
+;draw a lot of text in a column
+;with not much extra data
  
 pauseText:
  .db " GAME ",0
