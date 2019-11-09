@@ -7,6 +7,7 @@
 ;program specfic constants:
 LOCK_DISABLE = -1
 NULL_BLOCK = -1
+GARBAGE_BLOCK = -2
 vRamSplitSize = (vRamEnd - vRam) / 2 
 vRamSplit = vRam + vRamSplitSize
 
@@ -62,7 +63,7 @@ globalTimer = PSS + 344
 rRGT = -1 ;rising garbage timer
 rRGD = -2;rising garbage density
 ;generated set
-rGGT = -1;generated garbage amt
+rGGA = -1;generated garbage amt
 rGGD = -2 ;generated garbage density
 ;line clear data
 rLCW = -3;lines needed to clear to win
@@ -89,7 +90,7 @@ rbitRow0Clear = 1 ;for garbage/generated games
 
 rNull = 0
 rGame = 1 << rbitGameCont
-rEndless = 1 << rbitGameEndless
+rEndless = 1 << rbitGameEndless ;unused in favor of clearing win condition check flags
 rSRS = 1 << rbitSRSEnabled
 rPreview = 1 << rbitPreviewEnabled
 rHold = 1 << rbitHoldEnabled 
@@ -105,8 +106,6 @@ rRow0 = 1 << rbitRow0Clear
 rMarathon = rGame | rSRS | rPreview | rHold | rHardDrop
 rRetro = rGame
 
-rLC150 = 150
-rLC200 = 200
 blockData = PSS + 768
 buttonData = PSS + 1024
 
@@ -153,7 +152,7 @@ defaultInfo:
  xor a
  ld (ix+rRGT),a
  ld (ix+rRGD),a
- ld (ix+rLCW),rLC150
+ ld (ix+rLCW),150
  
  inc a ;a=1
  ld hl, level
@@ -171,14 +170,9 @@ initGame:
  ld a,7
  ld (holdT),a
  
- ;clear field
- ld hl,field
- ld de,field+1
- ld bc,255
- ld (hl),NULL_BLOCK
- ldir
+ call initBag ;also initializes random I guess?
+ call initField ;depends on RNG being seeded by initbag, which init's rng system
  
- call initBag
  call newBlock
  
  ;first draw to set up screen
@@ -191,7 +185,7 @@ initGame:
  ld ix,(drefIInfo)
  call drawObjects
  call swapVRamPTR
-  
+ 
 game:
  call scanKeys
  ld ix,buttonQuit
@@ -214,10 +208,95 @@ game:
  res redrawObjBit, (hl)
  
  ld ix,rules
- bit rBitGameCont, (ix+0)
+ bit rBitGameCont, (ix+rfBasic)
  jr nz, game ;jump if nz: bit is 1, game is going
  jp exit
 
+initField:
+ ld hl,field
+ ld de,field+1
+ ld bc,255
+ ld (hl),NULL_BLOCK
+ ldir
+ 
+ ld hl, rules+rfExtra
+ bit rbitGarbageInitial, (hl)
+ jr nz, generateGarbage
+ ret
+ 
+generateGarbage:
+ ld ix, rules
+ ld a,20
+ sub (ix+rGGA) ;garbage rows to generate
+ ld d,a
+ add a,a
+ add a,a
+ add a,d
+ add a,a ;10a = ofs from field
+ ld de,0
+ ld e,a
+ ld hl,field
+ add hl,de
+ 
+ ld b,(ix+rGGA)
+genGarbageLoop:
+ push bc
+ push hl ;save field position
+ 
+ ld b,(ix+rGGD)
+ ld ix, rules
+ call generateGarbageRow
+ pop hl
+ ld de,10
+ add hl,de
+ pop bc
+ djnz genGarbageLoop
+ ret
+ 
+;hl=ptr to field row
+;b=density to generate
+generateGarbageRow:
+ push hl
+ push bc
+ push hl
+ call rand
+ push de
+ pop hl
+ ;hl = random
+ ld a,10
+ call _DivHLByA
+ ;a = [0,9] random
+ pop hl ;get fieldptr
+ ld de,0
+ ld e,a
+ ;hl = fieldptr de = ofs
+backAgainGenerate: ;try again with new ofs here
+ add hl,de ;fieldptr+ofs
+ ld a,(hl)
+ or a,a ;clear carry
+ sbc hl,de ;fieldptr +ofs -ofs
+ cp NULL_BLOCK ;block is empty
+ jr nz, tryAgainGenerate ;isn't an empty block, try again
+ ld a,7
+ add hl,de
+ ld (hl),a ;counting loop
+ pop bc
+ pop hl ;orig. fieldptr
+ djnz generateGarbageRow
+ ret
+
+tryAgainGenerate:
+ ;hl = fieldptr
+ ;de = ofs
+ ld a,e
+ inc a
+ cp 10
+ jr nz, skipResetA0
+ xor a,a
+skipResetA0:
+ ld e,a 
+ jr backAgainGenerate
+ 
 shiftOldData:
  ;copy old mino data
  ;to use for clearing old draws
@@ -497,6 +576,8 @@ noIncrementE:
  pop bc
  djnz checkOneLine
  ld a,10
+ pop bc
+ push bc ;restore "y value" of row being checked
  cp e
  call z, clearLine
  pop bc
@@ -570,7 +651,15 @@ noLinesClear:
  ret
  
 clearLine:
- ;hl=end of cleared line
+ ld a,b
+ cp 1 ;last row is being check and is clear
+ jr nz, skipGameEndR0 ;not last row
+ ld ix,rules
+ bit rbitRow0Clear, (ix+rfWin)
+ jr z, skipGameEndR0 ;if row 0 is not the win condition, don't end game
+ res rbitGameCont, (ix+rfBasic)
+ 
+skipGameEndR0: 
  push hl
  ld bc,field
  ld de,11
@@ -2605,10 +2694,8 @@ randInit:
 ;generates a random 16-bit nubmer
 ;galosis LFSR, based on wikipedia page
 ;en.wikipedia.org/wiki/Linear-feedback_shift_register
-;I no longer know how this works, it's a copy of a copy of a z80 version I wrote.
-;The idea is something to do with right shifting
-;and XORing with the previously shifted bit to get a long cycle.
 ;Just read the wikipedia page.
+;This version is a slightly modified version of a bugged z80 version I created a few years ago.
 rand:
  ld de,(randseed)
  ld a,(randinput)
@@ -2627,7 +2714,7 @@ rand:
  ld (randseed),de
  ret
 randXOR:
- ld a,%10110100 ;this is the ideal set of bits to invert for a maximal cycle, apparently.
+ ld a,%10110100 ;this is the ideal set of bits to invert for a maximal cycle, apparently. (for 16 bits anyway)
  xor d
  ld d,a
  ret
@@ -2903,7 +2990,7 @@ initData:
  ld bc,PSS1024CopiedDataEnd - PSS1024CopiedData
  ldir
  ret
- 
+
 ;labels should be calculated relative to SSS
 SSSCopiedData:
 ;these data references are pointers to pointers
@@ -3197,7 +3284,7 @@ selectModeMenu:
  .db 8
  .db textColor
  .dw modeText - SSSCopiedData
- .db 8, 2 ;# items, cursorID within menuObjData
+ .db 14, 2 ;# items, cursorID within menuObjData
  ;cursor
  .db typeString
  .dw 0
@@ -3213,8 +3300,14 @@ modeText:
 .db "RETRO-150",0
 .db "RETRO-200",0
 .db "RETRO-ENDLESS",0
+.db "LINE RACE-20",0 ;diff from marathon: hs based on time, not points
 .db "LINE RACE-40",0
-.db "LINE RACE-20",0
+.db "DIG-5",0
+.db "DIG-10",0
+.db "DIG-15",0
+.db "EXCAVATION-10-LIGHT",0
+.db "EXCAVATION-10-MEDIUM",0
+.db "EXCAVATION-10-DENSE",0
 modeJumps:
  jp setupGame ;prev menu
  ;note: ld a,x/jr setLines = 4byte alignment
@@ -3230,11 +3323,23 @@ modeJumps:
  jr setRetro
  ld a,0
  jr setRetro
- ld a,40
- jr setLineRace
  ld a,20
  jr setLineRace
- 
+ ld a,40
+ jr setLineRace
+ ld a,5
+ jr setDig
+ ld a,10
+ jr setDig
+ ld a,15
+ jr setDig
+ ld a,2 << 5 | 10
+ jr setExcavate
+ ld a,5 << 5 | 10
+ jr setExcavate
+ ld a,7 << 5 | 10
+ jr setExcavate
+
 setLineRace: ;very similar haha
 setMarathon:
  ld ix,rules
@@ -3249,10 +3354,24 @@ setRetro:
  ld (ix+rfExtra), rNull ;no extra rules
  ld (ix+rfWin), rLines ;win on line-clears
  jr setLines
+
+setDig:
+ ld ix,rules
+ ld (ix+rfBasic), rMarathon
+ ld (ix+rfExtra), rGenerated ;no extra rules
+ ld (ix+rfWin), rRow0 ;win on line-clears
+ jr setGeneration
+
+setExcavate: 
+ ld ix,rules
+ ld (ix+rfBasic), rMarathon
+ ld (ix+rfExtra), rGenerated ;no extra rules
+ ld (ix+rfWin), rRow0 ;win on line-clears
+ jr setGenGGD
  
 setLines: 
  cp 0
- jr z, setNoLines
+ jr z, setNoWin
  ld (ix+rLCW),a
 
  ;return to setup menu
@@ -3264,8 +3383,27 @@ slToMenu:
  ld ix, startMenuData 
  jp activeMenu
  
-setNoLines:
+setNoWin:
  ld (ix+rfWin),a ;a=0
+ jr slToMenu
+
+setGeneration:
+ ld (ix+rGGD),9 ;9 blocks per row
+ ld (ix+rGGA),a
+ jr slToMenu
+
+setGenGGD:
+ ld e,a
+ and $1f
+ ld (ix+rGGA),a ;rows
+ xor a
+ ld b,3
+eback3:
+ rl e
+ rla
+ djnz eback3
+ inc a ;generate 1-8 density, not 0-7 because 0 is pointless anyways
+ ld (ix+rGGD),a
  jr slToMenu
  
 pauseData:
@@ -3341,6 +3479,12 @@ PSS768CopiedData:
  .db  0, 0
  .db  1, 0
  .db  0, 28
+;. piece
+ .db  0, 0
+ .db  0, 0
+ .db  0, 0
+ .db  0, 0
+ .db  0, 31
 PSS768CopiedDataEnd:
  
 ;wall kicks and rotation data
