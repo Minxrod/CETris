@@ -73,6 +73,7 @@ rules = PSS + 512
 rfBasic = 0 ;basic mechanics
 rfExtra = 1 ;extra mechanics
 rfWin = 2 ;win condition currently set
+rfScore = 3 ;high score method
 
 rbitGameCont = 0
 rbitGameEndless = 1
@@ -87,6 +88,11 @@ rbitGarbageInitial = 2
 
 rbitLinesClear = 0
 rbitRow0Clear = 1 ;for garbage/generated games
+rbitCountdown = 2 ;timed survival games
+
+rbitHighScore = 0
+rbitLowTime = 1
+rbitHighLine = 2
 
 rNull = 0
 rGame = 1 << rbitGameCont
@@ -102,10 +108,16 @@ rGenerated = 1 << rbitGarbageInitial
 
 rLines = 1 << rbitLinesClear
 rRow0 = 1 << rbitRow0Clear
+rCountdown = 1 << rbitCountdown
+
+rScore = 1 << rbitHighScore
+rTime = 1 << rbitLowTime
+rLine = 1 << rbitHighLine 
 
 rMarathon = rGame | rSRS | rPreview | rHold | rHardDrop
 rRetro = rGame
 
+theme = PSS + 764 ;precedes blockData
 blockData = PSS + 768
 buttonData = PSS + 1024
 
@@ -128,7 +140,7 @@ main:
  call loadSave
  ld (saveDataPTR),de
  
- call mainMenu
+ jp mainMenu
  
 exit:
  call saveSave
@@ -167,7 +179,7 @@ initGame:
  ld a,0
  ld (lines),a
  
- ld a,7
+ ld a,NULL_BLOCK
  ld (holdT),a
  
  call initBag ;also initializes random I guess?
@@ -188,7 +200,7 @@ initGame:
  
 game:
  call scanKeys
- ld ix,buttonQuit
+ ld ix,mbuttonQuit
  call checkKeyDown
  ret c
  
@@ -350,7 +362,7 @@ pauseLoop:
  ld ix,buttonPause
  call checkKeyDown
  jr c, pauseEnd
- ld ix,buttonQuit
+ ld ix,mbuttonQuit
  call checkKeyDown
  jr c, pauseEnd
  
@@ -386,7 +398,7 @@ hold:
  res redrawObjBit, (ix+iDataType)
  
  ld a,(holdT)
- cp 7
+ cp NULL_BLOCK
  jr z, firstHold
  
  ;need to swap held block and current block using transfer memory
@@ -1780,8 +1792,20 @@ drawJumps:
  jp drawPreview
  jp drawBox
  jp drawMenu
+ ld h,sp8bpp
+ jr sharedDSO
+ ld h,sp4bpp
+ jr sharedDSO
+ ld h,sp2bpp
+ jr sharedDSO
+ ld h,sp1bpp
+ jr sharedDSO
+ jp draw8BitNumber
  ret ;this one is just aesthetic
  
+sharedDSO:
+ jp drawSpriteObj
+
 drawNullBlock:
  ld a,0
  ld (tSpriteID),a
@@ -1935,6 +1959,10 @@ drawHoldX:
  pop bc
  djnz drawHoldY
 
+ ld a,(holdT)
+ cp NULL_BLOCK
+ ret z ;don't draw if it's empty!
+ 
  ld a,(ix+iDataXL)
  ld (dmOX),a
  ld a,(ix+iDataXH)
@@ -2184,6 +2212,19 @@ drawNumString:
 .db 0,0,0,0,0,0
 .db 0,0,0,0,0,0 ;12 bytes max
 .db 0
+draw8BitNumber:
+ ld hl,0
+ ld h,(ix+iDataPTRH)
+ ld l,(ix+iDataPTRL)
+ ld bc,PSS
+ add hl,bc ;ptr to number
+ ld a,(hl)
+ or a,a
+ sbc hl,hl
+ ld l,a ;hl = number
+ ;jump to shared code
+ jr drawNumShared
+
 draw24BitNumber:
  ld hl,0
  ld h,(ix+iDataPTRH)
@@ -2192,6 +2233,8 @@ draw24BitNumber:
  add hl,bc ;ptr to number
  
  ld hl,(hl) ;hl is number
+ 
+drawNumShared:
  ld de,drawNumString+11
  ld b,12
 convToString:
@@ -2225,6 +2268,9 @@ convToString:
 
 ;ix = input
 drawSpriteObject:
+ ld h,sp8bpp ;default 8bpp
+drawSpriteObj:
+ ld a,h ;save bpp
  push ix
  ld hl,0
  ld h,(ix+iDataPTRH)
@@ -2233,6 +2279,10 @@ drawSpriteObject:
  add hl,bc ;ptr to number
  push hl ;ptr to sprite data
  
+ ld hl,0
+ ld h,a ;get bpp
+ ld l,(ix+iDataY)
+ 
  ld de,0
  ld d,(ix+iDataXH)
  ld e,(ix+iDataXL)
@@ -2240,10 +2290,8 @@ drawSpriteObject:
  ld bc,0
  ld b,(ix+iDataH)
  ld c,(ix+iDataW)
- ld a,(ix+iDataA)
- 
- ld hl,0
- ld l,(ix+iDataY)
+ ld a,(ix+iDataA) 
+
  pop ix
  call drawSprite
  pop ix
@@ -2408,30 +2456,30 @@ scanToMenuJumps:
  add hl,bc ;hl=ix+size*cursorID or, offset to cursor data
  ld (cursorPTR),hl
  
- ld ix,buttonConfirm
+ ld ix,mbuttonConfirm
  call waitNoButton
  jr menuDraw
  
 menuLoop:
  call scanKeys
  
- ld ix,buttonConfirm
+ ld ix,mbuttonConfirm
  call checkKeyDown
  jp c,menuSelect
  
- ld ix,buttonBack
+ ld ix,mbuttonBack
  call checkKeyDown
  jp c,amenuEnd
  
- ld ix,buttonUp
+ ld ix,mbuttonUp
  call checkKeyDown
  jr c,menuUp
  
- ld ix,buttonDown
+ ld ix,mbuttonDown
  call checkKeyDown
  jr c,menuDown
  
- ld ix,buttonQuit
+ ld ix,mbuttonQuit
  call checkKeyDown
  jp c,exit ;early exit option (will end program)
  jr menuLoop ;only redraw if something happens
@@ -2524,6 +2572,8 @@ ptrOK:
  
 numberSelection:
 .db 0
+numberMax:
+.db 0
 setNumberPTR:
 .dl 0
 setVarPTR:
@@ -2534,6 +2584,7 @@ setVarPTR:
 
 setNumber:
  ;ix points to data
+ ld (numberMax),a
  ld (setNumberPTR),ix
 
  or a,a
@@ -2544,28 +2595,28 @@ setNumber:
  add hl,de
  ld (setVarPTR),hl ;points to variable to set
  
- xor a,a
- ld (numberSelection),a ;default: 0
+ ld a,(hl) ;get default/previous from memory
+ ld (numberSelection),a
  
- ld ix, buttonConfirm
+ ld ix, mbuttonConfirm
  call waitNoButton ;wait for no confirmation press
  
 setNumberLoop:
  call scanKeys
  
- ld ix,buttonback
+ ld ix,mbuttonback
  call checkKeyDown
  jr c, setNumberFinal ;return from setNumber
 
- ld ix,buttonLeft
+ ld ix,mbuttonLeft
  call checkKeyDown
  jr c, setNumDown
  
- ld ix,buttonRight
+ ld ix,mbuttonRight
  call checkKeyDown
  jr c, setNumUp
 
- ld ix,buttonQuit
+ ld ix,mbuttonQuit
  call checkKeyDown
  jp c,exit ;early exit option (will end program)
  jr setNumberLoop ;only redraw if something happens
@@ -2573,12 +2624,18 @@ setNumberLoop:
 setNumDown:
  ld a,(numberSelection)
  dec a
+ cp 255
+ jr z, setNumDraw ;don't dec past 0
  ld (numberSelection),a
  jr setNumDraw
  
 setNumUp:
+ ld a,(numberMax)
+ ld b,a
  ld a,(numberSelection)
  inc a
+ cp b
+ jr nc, setNumDraw
  ld (numberSelection),a
  ;jr setNumDraw
  
@@ -2599,7 +2656,7 @@ updateSetNum:
  ret
  
 setNumberFinal: ;just wait for confirm to be released, then end
- ld ix, buttonBack
+ ld ix, mbuttonBack
  call waitNoButton
  ret ;return from setNumber call
  
@@ -2741,11 +2798,14 @@ buttonRotateRight = 5 * buttonDataSize + buttonData
 buttonHold = 6 * buttonDataSize + buttonData
 buttonPause = 7 * buttonDataSize + buttonData
 
-buttonUp = 8 * buttonDataSize + buttonData
-buttonDown = 9 * buttonDataSize + buttonData
-buttonConfirm = 10 * buttonDataSize + buttonData
-buttonBack = 11 * buttonDataSize + buttonData
-buttonQuit = 12 * buttonDataSize + buttonData
+mbuttonUp = 8 * buttonDataSize + buttonData
+mbuttonDown = 9 * buttonDataSize + buttonData
+mbuttonLeft = 10 * buttonDataSize + buttonData
+mbuttonRight = 11 * buttonDataSize + buttonData
+
+mbuttonConfirm = 12 * buttonDataSize + buttonData
+mbuttonBack = 13 * buttonDataSize + buttonData
+mbuttonQuit = 14 * buttonDataSize + buttonData
 
 noRepeat = -1
 
@@ -2768,9 +2828,14 @@ PSS1024CopiedData:
 .db 6, noRepeat, noRepeat, 0
 
 ;buttonup:
-.db 51, noRepeat, noRepeat, 0
+.db 51, 60, 15, 0
 ;buttondown:
-.db 48, noRepeat, noRepeat, 0
+.db 48, 60, 15, 0
+;buttonleft:
+.db 49, 60, 15, 0
+;buttonright:
+.db 50, 60, 15, 0
+
 ;buttonconfirm:
 .db 5, noRepeat, noRepeat, 0
 ;buttonback:
@@ -2924,7 +2989,7 @@ RestoreKeyboard:
  inc l		; 0F50005h
  ld (hl),a	; Number of columns to scan
  ret
- 
+
 tSpriteID:
  .db 0
 tSpritePAL:
@@ -3079,6 +3144,7 @@ typeSprite8bpp=8
 typeSprite4bpp=9
 typeSprite2bpp=10
 typeSprite1bpp=11
+typeNumber8=12
 
 boxColor = 14
 boxColor2= 15
@@ -3184,7 +3250,7 @@ menuObjData:
  .db 8
  .db textColor
  .dw menuText - SSSCopiedData
- .db 2, 2 ;# items, cursorID within menuObjData
+ .db 3, 2 ;# items, cursorID within menuObjData
  ;cursor
  .db typeString
  .dw 0
@@ -3198,14 +3264,21 @@ cursorString:
  
 menuText:
  .db "START",0
+optionsText:
+ .db "OPTIONS",0
  .db "EXIT",0
 menuJumps:
- jp exit ;first item is prev menu, if exists
+ jp mainMenu ;first item is prev menu, if exists
  jp setupGame
+ jp gotoOptions
  jp exit
-
+ 
 setupGame:
  ld ix, startMenuData
+ jp activeMenu
+ 
+gotoOptions:
+ ld ix, optionsMenuData
  jp activeMenu
  
 startMenuData:
@@ -3258,6 +3331,7 @@ startMenuJumps:
  
 selectLev:
  ld ix, startMenuSelectLev
+ ld a, 20
  call setNumber
  
  ;after setting number,
@@ -3406,6 +3480,217 @@ eback3:
  ld (ix+rGGD),a
  jr slToMenu
  
+optionsMenuData:
+ .db 5
+;background box
+ .db typeBox
+ .dw 0 ;x
+ .db 0 ;y
+ .db 18 ;color
+ .dw 80 ;width
+ .db 19, 32 ;bordercolor, height
+;heading
+ .db typeString
+ .dw 0
+ .db 0
+ .db textColor
+ .dw optionsText - SSSCopiedData
+ .db 0, 0
+;menu
+ .db typeMenu
+ .dw 8
+ .db 8
+ .db textColor
+ .dw optionsMenuText - SSSCopiedData
+ .db 2, 3
+;curosr
+ .db typeString
+ .dw 0
+ .db 8
+ .db textColor
+ .dw cursorString - SSSCopiedData
+ .db 0, 0
+;theme
+themeSelection:
+ .db typeNumber
+ .dw 56
+ .db 8
+ .db textColor
+ .dw theme - PSS
+ .db 3, 19
+ 
+optionsMenuText:
+ .db "THEME:",0
+ .db "CONTROLS",0
+optionJumps:
+ jp mainMenu
+ jp setTheme
+ jp controlMenu
+ 
+controlMenu:
+ ld ix,controlMenuData
+ jp activeMenu
+ 
+setTheme:
+ ld ix,themeSelection
+ ld a,4
+ call setNumber
+ 
+ ld a,(theme) ;value just set here
+ ld hl,blockData + spriteID
+ ld de,10
+ ld b,7
+replaceBlockSpriteID:
+ ld (hl),a
+ add hl,de
+ djnz replaceBlockSpriteID
+ ;all spriteid has been replaced, back to options
+ 
+ ld ix, optionsMenuData
+ jp activeMenu ;back to options menu
+ 
+controlMenuData:
+ .db 5
+;background
+ .db typeBox
+ .dw 0
+ .db 0
+ .db 22
+ .dw 100
+ .db 23, 32
+;menu
+ .db typeMenu
+ .dw 8
+ .db 8
+ .db textColor
+ .dw controlMenuText - SSSCopiedData
+ .db 2, 2
+;cursor
+ .db typeString
+ .dw 0
+ .db 8
+ .db textColor
+ .dw cursorString - SSSCopiedData
+ .db 0, 0
+keyRepeatLR:
+ .db typeNumber8
+ .dw 120
+ .db 8
+ .db textColor
+ .dw buttonLeft + buttonTimeRepeat - PSS
+ .db 3, 2 ;digits, bgcolor
+keyRepeatDrop:
+ .db typeNumber8
+ .dw 120
+ .db 16
+ .db textColor
+ .dw buttonSoft + buttonTimeRepeat - PSS
+ .db 3, 2 ;digits, bgcolor
+ 
+controlMenuText:
+ .db "MOVE REPEAT..",0
+ .db "DROP REPEAT..",0
+ 
+controlJumps:
+ jp controlMenu
+ jp setButtonInfoLR
+ jp setButtonInfoDrop
+ 
+setButtonInfoLR:
+ ld ix, keyRepeatLR
+ ld a,255
+ call setNumber
+ 
+ ;affect both LEFT and RIGHT.
+ ld a,(numberSelection)
+ ld hl,buttonRight+buttonTimeRepeat
+ ld (hl),a
+ 
+ ld ix, optionsMenuData
+ jp activeMenu
+ 
+setButtonInfoDrop:
+ ld ix, keyRepeatDrop
+ ld a,255
+ call setNumber
+
+ ld ix, optionsMenuData
+ jp activeMenu
+ 
+
+ 
+;note: cursorID does not apply
+;if active menu is not called
+;so, typeMenu can also simply
+;draw a lot of text in a column
+;with not much extra data
+
+;will be used in button mapping
+buttonText:
+;g1
+ .db "GRAPH",0
+ .db "TRACE",0
+ .db "ZOOM",0
+ .db "WINDOW",0
+ .db "Y=",0
+ .db "2ND",0
+ .db "MODE",0
+ .db "DEL",0
+;g2
+ .db "ON",0 ;unobtainable
+ .db "SOT",0
+ .db "LN",0
+ .db "LOG",0
+ .db "X^2",0
+ .db "X^-1",0
+ .db "MATH",0
+ .db "ALPHA",0
+;g3
+ .db "0",0
+ .db "1",0
+ .db "4",0
+ .db "7",0
+ .db ",",0
+ .db "SIN",0
+ .db "APPS",0
+ .db "XT0N",0
+;g4
+ .db ".",0
+ .db "2",0
+ .db "5",0
+ .db "8",0
+ .db "(",0
+ .db "COS",0
+ .db "PRGM",0
+ .db "STAT",0
+;g5
+ .db "(-)",0
+ .db "3",0
+ .db "6",0
+ .db "9",0
+ .db "(",0
+ .db "TAN",0
+ .db "VARS",0
+ .db "",0
+;g6
+ .db "ENTER",0
+ .db "+",0
+ .db "-",0
+ .db "*",0
+ .db "/",0
+ .db "^",0
+ .db "CLEAR",0
+ .db "",0
+;g7
+ .db "DOWN",0
+ .db "LEFT",0
+ .db "RIGHT",0
+ .db "UP",0
+;.db "",0 ;does not exist
+;.db "",0
+;.db "",0
+;.db "",0
+ 
 pauseData:
  .db 2
 ;background box
@@ -3421,13 +3706,8 @@ pauseData:
  .db 112
  .db textColor
  .dw pauseText - SSSCopiedData
- .db 2, 0
- 
-;note: cursorID does not apply
-;if active menu is not called
-;so, typeMenu can also simply
-;draw a lot of text in a column
-;with not much extra data
+ .db 8, 2
+;numbers etc
  
 pauseText:
  .db " GAME ",0
