@@ -2456,7 +2456,10 @@ scanToMenuJumps:
  add hl,bc ;hl=ix+size*cursorID or, offset to cursor data
  ld (cursorPTR),hl
  
+ ;wait for no button forward or back through menu
  ld ix,mbuttonConfirm
+ call waitNoButton
+ ld ix,mbuttonBack
  call waitNoButton
  jr menuDraw
  
@@ -2600,14 +2603,20 @@ setNumber:
  
  ld ix, mbuttonConfirm
  call waitNoButton ;wait for no confirmation press
+ ld ix, mbuttonBack
+ call waitNoButton ;wait for no back press
  
 setNumberLoop:
  call scanKeys
  
- ld ix,mbuttonback
+ ld ix,mbuttonBack
  call checkKeyDown
  jr c, setNumberFinal ;return from setNumber
 
+ ld ix,mbuttonConfirm
+ call checkKeyDown
+ jr c, setNumberFinal ;return from setNumber
+ 
  ld ix,mbuttonLeft
  call checkKeyDown
  jr c, setNumDown
@@ -2655,8 +2664,10 @@ updateSetNum:
  ld (hl),a
  ret
  
-setNumberFinal: ;just wait for confirm to be released, then end
+setNumberFinal: ;just wait for confirm/back to be released, then end
  ld ix, mbuttonBack
+ call waitNoButton
+ ld ix, mbuttonConfirm
  call waitNoButton
  ret ;return from setNumber call
  
@@ -3242,8 +3253,8 @@ menuObjData:
  .dw 0 ;x
  .db 0 ;y
  .db 5 ;color
- .dw 64 ;width
- .db 6, 32 ;bordercolor, height
+ .dw 72 ;width
+ .db 6, 40 ;bordercolor, height
  ;menu text
  .db typeMenu
  .dw 8
@@ -3288,8 +3299,8 @@ startMenuData:
  .dw 0 ;x
  .db 0 ;y
  .db 2 ;color
- .dw 80 ;width
- .db 1, 32 ;bordercolor, height
+ .dw 200 ;width
+ .db 1, 40 ;bordercolor, height
  ;menu text
  .db typeMenu
  .dw 8
@@ -3310,7 +3321,7 @@ startMenuSelectMode:
  .db 8
  .db textColor
  .dw modeText - SSSCopiedData
- .db 0, 1
+ .db 0, 2 ;bg color
 startMenuSelectLev:
  .db typeNumber
  .dw 56
@@ -3350,8 +3361,8 @@ selectModeMenu:
  .dw 0 ;x
  .db 0 ;y
  .db 9 ;color
- .dw 120 ;width
- .db 10, 32 ;bordercolor, height
+ .dw 160 ;width
+ .db 10, 128 ;bordercolor, height
  ;menu text
  .db typeMenu
  .dw 8
@@ -3379,9 +3390,9 @@ modeText:
 .db "DIG-5",0
 .db "DIG-10",0
 .db "DIG-15",0
-.db "EXCAVATION-10-LIGHT",0
-.db "EXCAVATION-10-MEDIUM",0
-.db "EXCAVATION-10-DENSE",0
+.db "EXCAVATE-10-LIGHT",0
+.db "EXCAVATE-10-MEDIUM",0
+.db "EXCAVATE-10-DENSE",0
 modeJumps:
  jp setupGame ;prev menu
  ;note: ld a,x/jr setLines = 4byte alignment
@@ -3488,25 +3499,25 @@ optionsMenuData:
  .db 0 ;y
  .db 18 ;color
  .dw 80 ;width
- .db 19, 32 ;bordercolor, height
+ .db 19, 40 ;bordercolor, height
 ;heading
  .db typeString
  .dw 0
- .db 0
+ .db 8
  .db textColor
  .dw optionsText - SSSCopiedData
  .db 0, 0
 ;menu
  .db typeMenu
  .dw 8
- .db 8
+ .db 16
  .db textColor
  .dw optionsMenuText - SSSCopiedData
  .db 2, 3
 ;curosr
  .db typeString
  .dw 0
- .db 8
+ .db 16
  .db textColor
  .dw cursorString - SSSCopiedData
  .db 0, 0
@@ -3514,7 +3525,7 @@ optionsMenuData:
 themeSelection:
  .db typeNumber
  .dw 56
- .db 8
+ .db 16
  .db textColor
  .dw theme - PSS
  .db 3, 19
@@ -3556,7 +3567,7 @@ controlMenuData:
  .dw 0
  .db 0
  .db 22
- .dw 100
+ .dw 132
  .db 23, 32
 ;menu
  .db typeMenu
@@ -3574,25 +3585,25 @@ controlMenuData:
  .db 0, 0
 keyRepeatLR:
  .db typeNumber8
- .dw 120
+ .dw 104
  .db 8
  .db textColor
  .dw buttonLeft + buttonTimeRepeat - PSS
- .db 3, 2 ;digits, bgcolor
+ .db 3, 22 ;digits, bgcolor
 keyRepeatDrop:
  .db typeNumber8
- .dw 120
+ .dw 104
  .db 16
  .db textColor
  .dw buttonSoft + buttonTimeRepeat - PSS
- .db 3, 2 ;digits, bgcolor
+ .db 3, 22 ;digits, bgcolor
  
 controlMenuText:
- .db "MOVE REPEAT..",0
- .db "DROP REPEAT..",0
+ .db "MOVE REPEAT:",0
+ .db "DROP REPEAT:",0
  
 controlJumps:
- jp controlMenu
+ jp gotoOptions
  jp setButtonInfoLR
  jp setButtonInfoDrop
  
@@ -3606,16 +3617,14 @@ setButtonInfoLR:
  ld hl,buttonRight+buttonTimeRepeat
  ld (hl),a
  
- ld ix, optionsMenuData
- jp activeMenu
+ jp controlMenu
  
 setButtonInfoDrop:
  ld ix, keyRepeatDrop
  ld a,255
  call setNumber
 
- ld ix, optionsMenuData
- jp activeMenu
+ jp controlMenu
  
 
  
