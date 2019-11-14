@@ -21,6 +21,7 @@ blockDataSize = 10
 csLockedBit = 0    ;locked block bit
 csNewBlockBit = 1  ;prev. frame requests new block
 csClearLineBit = 2 ;if block cleared a line
+csGarbageBit = 3   ;apply garbage stored
 
 holdT= PSS + 256
 ;current mino data
@@ -117,6 +118,7 @@ rLine = 1 << rbitHighLine
 rMarathon = rGame | rSRS | rPreview | rHold | rHardDrop
 rRetro = rGame
 
+lockDelay = PSS + 760
 theme = PSS + 764 ;precedes blockData
 blockData = PSS + 768
 buttonData = PSS + 1024
@@ -167,17 +169,21 @@ defaultInfo:
  ld (ix+rLCW),150
  
  inc a ;a=1
- ld hl, level
- ld (hl),a
+ ld (level),a ;starting level is by default one
  ret 
 
 mainMenu:
+ call defaultInfo ;ensure start menu is accurate
  ld ix,(drefMenu)
  jp activeMenu
  
 initGame:
  ld a,0
  ld (lines),a
+
+ ld hl,0
+ ld (score),hl ;don't keep old score/time!
+ ld (globaltimer),hl
  
  ld a,NULL_BLOCK
  ld (holdT),a
@@ -1186,7 +1192,7 @@ blockTooFarDown:
  ld a,(lockTimer)
  cp LOCK_DISABLE
  jr nz,noLockRefresh
- ld a,10
+ ld a,(lockDelay)
  ld (lockTimer),a
 noLockRefresh:
  ld a,0
@@ -1703,12 +1709,19 @@ gameEndInit:
  call drawObjectsNoReset
  call swapVRamPTR
  ld ix,(drefGameOver)
- call drawObjects
+ call drawObjectsNoReset
  
+gameEndWait:
+ call scanKeys
+
  ld ix,mbuttonConfirm
- call waitButton ;wait for user confirmation
+ call checkKeyDown
+ jp c,mainmenu ;go back to main menu
  
- jp mainMenu
+ ld ix,mbuttonQuit
+ call checkKeyDown
+ jp c,exit ;end game
+ jr gameEndWait
  
 eraseOldMino:
  ld hl, curStatus + midOfs
@@ -3074,6 +3087,9 @@ initData:
  ld de,buttonData
  ld bc,PSS1024CopiedDataEnd - PSS1024CopiedData
  ldir
+ 
+ ld a,30
+ ld (lockDelay),a
  ret
 
 ;labels should be calculated relative to SSS
