@@ -137,13 +137,13 @@ main:
  
  call defaultInfo
  
- call loadSave
- ld (saveDataPTR),de
+ ;call loadSave
+ ;ld (saveDataPTR),de
  
  jp mainMenu
  
 exit:
- call saveSave
+ ;call saveSave
  call resetLCD
  call restoreKeyboard
  
@@ -202,7 +202,7 @@ game:
  call scanKeys
  ld ix,mbuttonQuit
  call checkKeyDown
- ret c
+ jp c, exit ;exit if pressed
  
  call shiftOldData
  ;part of update code, essentially
@@ -222,7 +222,7 @@ game:
  ld ix,rules
  bit rBitGameCont, (ix+rfBasic)
  jr nz, game ;jump if nz: bit is 1, game is going
- jp exit
+ jp gameEndInit
 
 initField:
  ld hl,field
@@ -350,12 +350,9 @@ userUpdate:
  ret
  
 pause:
- call scanKeys
- 
  ld ix,buttonPause
- call checkKeyDown
- jr nc, pause ;wait until release of mode button
-
+ call waitNoButton
+ 
 pauseLoop:
  call scanKeys
 
@@ -1701,6 +1698,18 @@ skipDraw1:
 skipDraw2:
  ret
  
+gameEndInit:
+ ld ix,(drefGameOver)
+ call drawObjectsNoReset
+ call swapVRamPTR
+ ld ix,(drefGameOver)
+ call drawObjects
+ 
+ ld ix,mbuttonConfirm
+ call waitButton ;wait for user confirmation
+ 
+ jp mainMenu
+ 
 eraseOldMino:
  ld hl, curStatus + midOfs
  bit csLockedBit, (hl)
@@ -2928,7 +2937,7 @@ waitButton:
  call scanKeys
 
  call checkKeyDown
- jr nc, waitNoButton ;wait for selection
+ jr nc, waitButton ;wait for selection
  ret 
 
 initKeyTimer:
@@ -3088,6 +3097,7 @@ dataReferences:
 .dl menuObjData ;menu data
 .dl pauseData
 .dl SSSInfo ;ptr to item info for display in game
+.dl gameOverData ;game over notif
 
 drefSize = 3
 drefOfs = dataReferences - SSSCopiedData + SSS
@@ -3100,6 +3110,7 @@ drefPalette	= drefSize * 4 + drefOfs
 drefMenu = drefSize * 5 + drefOfs
 drefPause = drefSize * 6 + drefOfs
 drefIInfo = drefSize * 7 + drefOfs
+drefGameOver = drefSize * 8 + drefOfs
 
 ;these references behave the same as data references
 ;but are for specific graphical elements,
@@ -3115,9 +3126,9 @@ drefIInfo = drefSize * 7 + drefOfs
 references:
 .dl fieldInfo - itemsInfo + SSSInfo
 .dl holdInfo - itemsInfo + SSSInfo
-.dl levelInfo + iDataSize - itemsInfo + SSSInfo
-.dl scoreInfo + iDataSize - itemsInfo + SSSInfo
-.dl linesInfo + iDataSize - itemsInfo + SSSInfo
+.dl levelInfo - itemsInfo + SSSInfo
+.dl scoreInfo - itemsInfo + SSSInfo
+.dl linesInfo - itemsInfo + SSSInfo
 .dl charInfo - itemsInfo + SSSInfo
 .dl timerInfo - itemsInfo + SSSInfo
 
@@ -3156,13 +3167,14 @@ typeSprite4bpp=9
 typeSprite2bpp=10
 typeSprite1bpp=11
 typeNumber8=12
+typeList=13
 
 boxColor = 14
 boxColor2= 15
 textColor= 35
 
 itemsInfo:
-.db 10 ;number of items
+.db 8 ;number of items
 fieldInfo:
 .db typeTetris
 .dw 0 ;x
@@ -3182,64 +3194,49 @@ holdInfo:
 .dw 152 ;x
 .db 16 ;y
 .db boxColor ;color of main
-.dw 96 ;width
+.dw 128 ;width
 .db boxColor2, 80 ;bordercolor, height
-scoreInfo:
-.db typeString
+;SCORE TEXT ETC.
+.db typeMenu
 .dw 160
 .db 24
 .db textColor
-.dw scoreText - SSSCopiedData ;ptr to string data
-.db 0, boxColor ;unused, bgcolor
-;SCORE NUMBER
+.dw gameText - SSSCopiedData
+.db 5, 0 ;don't matter cause' not a menu
+scoreInfo:
 .db typeNumber
-.dw 160
-.db 32
+.dw 208
+.db 24
 .db textColor
-.dw score - PSS ;variables are saved in PSS, data is saved in SSS
+.dw score - PSS ;variables are saved in PSS
 .db 8, boxColor ; size of number, bgcolor
 levelInfo:
-.db typeString
-.dw 160
-.db 48
-.db textColor
-.dw levelText - SSSCopiedData
-.db typeString, boxColor ;old, bg color
-;LEVEL NUMBER
 .db typeNumber
-.dw 160
-.db 56
+.dw 208
+.db 48
 .db textColor
 .dw level - PSS
 .db 3, boxColor ;size number, bg color
 linesInfo:
-.db typeString
-.dw 160
-.db 72
-.db textColor
-.dw linesText - SSSCopiedData
-.db typeString, boxColor ;old, bgcolor
-;LINES NUMBER
 .db typeNumber
-.dw 160
-.db 80
+.dw 208
+.db 56
 .db textColor
 .dw lines - PSS
 .db 4, boxcolor ;number of digits, bgcolor
-;DEBUG TEXT
 timerInfo:
 .db typeNumber
-.dw 204
-.db 80
+.dw 208
+.db 32
 .db textColor
 .dw globalTimer - PSS
-.db 3, boxcolor
+.db 8, boxcolor
 
-scoreText:
+gameText
  .db "Score:",0
-levelText:
+ .db "Timer:",0
+ .db 0
  .db "Level:",0
-linesText:
  .db "Lines:",0
 
 SSSInfo = itemsInfo - SSSCopiedData + SSS
@@ -3626,8 +3623,6 @@ setButtonInfoDrop:
 
  jp controlMenu
  
-
- 
 ;note: cursorID does not apply
 ;if active menu is not called
 ;so, typeMenu can also simply
@@ -3715,12 +3710,34 @@ pauseData:
  .db 112
  .db textColor
  .dw pauseText - SSSCopiedData
- .db 8, 2
+ .db 2, 2
 ;numbers etc
  
 pauseText:
  .db " GAME ",0
  .db "PAUSED",0
+ 
+gameOverData:
+ .db 2
+;background box
+ .db typeBox
+ .dw 32
+ .db 108
+ .db boxColor
+ .dw 56
+ .db boxColor2, 24
+;menu text
+ .db typeMenu
+ .dw 44
+ .db 112
+ .db textColor
+ .dw gameOverText - SSSCopiedData
+ .db 2, 2
+;numbers etc
+ 
+gameOverText:
+ .db "GAME",0
+ .db "OVER",0
  
 ;format: x ofs, y ofs, spriteID, palette
 spriteID = 8
