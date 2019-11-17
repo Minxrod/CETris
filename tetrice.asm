@@ -259,6 +259,7 @@ generateGarbage:
  ld d,a
  add a,a
  add a,a
+ add a,d
  add a,a ;10a = ofs from field
  ld de,0
  ld e,a
@@ -3723,13 +3724,8 @@ PSS768CopiedData:
  .db  0,-1
  .db  0, 0
  .db  1, 0
-;. piece???
- .db  0, 0
- .db  0, 0
- .db  0, 0
- .db  0, 0
 PSS768CopiedDataEnd:
- 
+
 blockGraphicData:
  .db  0, 4
  .db  0, 8
