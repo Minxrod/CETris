@@ -7,7 +7,6 @@
 ;program specfic constants:
 LOCK_DISABLE = -1
 NULL_BLOCK = -1
-GARBAGE_BLOCK = -2
 vRamSplitSize = (vRamEnd - vRam) / 2 
 vRamSplit = vRam + vRamSplitSize
 
@@ -15,7 +14,8 @@ vRamSplit = vRam + vRamSplitSize
 PSS = plotSScreen
 field = PSS
 
-blockDataSize = 10
+blockDataSize = 8
+blockGraphicSize = 2
 
 ;current status bits
 csLockedBit = 0    ;locked block bit
@@ -32,7 +32,7 @@ curR = curData + 2
 curT = curData + 3
 curStatus = curData + 4
 curBlock = curData + 5 ;size: 10
-curDataSize = curBlock + blockDataSize - curX
+curDataSize = curBlock + blockDataSize + blockGraphicSize - curX
 
 ;inbetween cur and old is a middle data chunk
 ;used to handle intermediate frames due to
@@ -57,10 +57,12 @@ lines = PSS + 328
 linesToNextLevel = PSS + 332
 timerT = PSS + 336
 lockTimer = PSS + 340
-globalTimer = PSS + 344
+globalTimer = PSS + 348
+highscore = PSS + 348
 
 ;data for various rules, stored as offset from rules
 ;garbage set
+rMode = -4 ;why did I forget this
 rRGT = -1 ;rising garbage timer
 rRGD = -2;rising garbage density
 ;generated set
@@ -122,10 +124,18 @@ lockDelay = PSS + 760
 theme = PSS + 764 ;precedes blockData
 blockData = PSS + 768
 buttonData = PSS + 1024
-
+blockGraphic = PSS + 1280
 ;graphical and data resources
 ;note: info must be RELOCATED to this location.
 SSS = saveSScreen
+
+;save file consts
+savKeys = 0
+savTheme = 64 ;appvar name for theme
+savThemeSub = 73 ;block theme id, etc.
+savHighscore = 74
+savHighSize = 8
+savSize = 512 ;save should not pass this size, kinda large.
 
 ;bit set/reset when an object must be updated
 redrawObjBit = 7
@@ -139,13 +149,13 @@ main:
  
  call defaultInfo
  
- ;call loadSave
- ;ld (saveDataPTR),de
+ call loadSave
+ ld (saveDataPTR),de
  
  jp mainMenu
  
 exit:
- ;call saveSave
+ call saveSave
  call resetLCD
  call restoreKeyboard
  
@@ -249,7 +259,6 @@ generateGarbage:
  ld d,a
  add a,a
  add a,a
- add a,d
  add a,a ;10a = ofs from field
  ld de,0
  ld e,a
@@ -722,7 +731,6 @@ newBlock:
  ld d,a
  add a,a
  add a,a
- add a,d
  add a,a
  ld de,0
  ld e,a
@@ -753,7 +761,6 @@ determinedBlock:
  ld d,a
  add a,a
  add a,a
- add a,d
  add a,a
  ld de,0
  ld e,a
@@ -1228,12 +1235,11 @@ checkBlock:
 ;inputs:
 ;a = block type
 copyBlockData:
- ld d,a ;save d for later
+ push af ;ld d,a ;save d for later
  ld hl, blockData
  add a,a ;x2
  add a,a ;x4
- add a,d ;x5
- add a,a ;x10
+ add a,a ;x8
  ld de,0
  ld e,a ;de = offset from blockData
  add hl,de
@@ -1241,6 +1247,16 @@ copyBlockData:
  ld de, curBlock
  ld bc, blockDataSize
  ldir ;copied to current block mem
+ 
+ pop af ;get a again
+ ld hl, blockGraphicData
+ add a,a
+ ld de,0
+ ld e,a
+ add hl,de ;blockGraphic + ofs
+ ld de, curBlock + blockDataSize
+ ld bc, blockGraphicSize
+ ldir
  ret
  
 ;initialize 8bpp mode and palette
@@ -1544,96 +1560,8 @@ shiftLoop:
  rrc c
  ret
  
-drawHeldMino:
- ld a,(holdT)
- ;ld d,a ;save d for later
- ;push hl
- ;ld hl, blockData
- ;add a,a ;x2
- ;add a,a ;x4
- ;add a,d ;x5
- ;add a,a ;x10
- ;ld de,0
- ;ld e,a ;de = offset from blockData
- ;add hl, de ;block data ptr
- ;push hl
- ;ld de,spriteID
- ;add hl,de
- ;ld a, (hl)
- ;ld (tSpriteID),a
- ;inc hl ;block data + id + pal
- ;ld a, (hl)
- ;ld (tSpritePAL),a
- ;ld b,4
- ;pop de ;bdptr
- ;pop hl ;coords
- ;;jp drawMino ;not needed because structure
- 
-;inputs:
-; h=x (in grid tiles)
-; l=y (in grid tiles)
-; a=mino type
-drawMino:
- ;ld d,a ;save d for later
- push hl
- ld hl, curBlock
- ;add a,a ;x2
- ;add a,a ;x4
- ;add a,d ;x5
- ;add a,a ;x10
- ;ld de,0
- ;ld e,a ;de = offset from blockData
- ;add hl, de ;block data ptr
- push hl ;stack:  bdptr-coords
- ld de, spriteID
- add hl, de ;block data + id
- ld a, (hl)
- ld (tSpriteID),a
- inc hl ;block data + id + pal
- ld a, (hl)
- ld (tSpritePAL),a
- ld b,4
- pop de ;bdptr
- pop hl ;coords
-drawAllBlocks:
- push bc
- push hl ;coords
- ld a,(de)
- add a,h
- ld h,a
- inc de
- ld a,(de)
- add a,l
- ld l,a
- inc de
- push de
- call drawOneBlock
- pop de
- pop hl ;coords
- pop bc
- djnz drawAllBlocks
- ret
- 
-;inputs:
-;h=x+ofsx
-;l=y+ofsy
-;(tSpritePal), (tSpriteID)
-drawOneBlock:
- ld a,l
- cp 21
- ret nc ;do not draw OOB
- ld a,h
- cp 26
- ret nc ;still no OOB
- ;push hl ;save xy
- ld e,h ;save e=x
- ld h,12
- mlt hl ;hl = 12*y implies l=12*y since y<20
- ld d,12
- mlt de ;de = 12*(x + xOfs)
- 
- ;starting here:
- ;skips bounds check 
+ ;draws a block from coords + set tSpriteId, tSpritePAL
+ ;no bounds check 
  ;accepts (DE, L) as coordinates
  ;still needs tSpriteID and tSpritePAL
 drawOneBlockNoGrid:
@@ -1853,12 +1781,9 @@ drawFieldX:
  ld a,(hl) ;a is now curT
  ld d,a
  add a,a ;2
- add a,a ;4
- add a,d ;5
- add a,a ;10
  ld de,0
  ld e,a
- ld hl,blockData + spriteID
+ ld hl,blockGraphicData
  add hl,de ;find block sprite ID and pal from here
  ld a,(hl)
  ld (tSpriteID),a
@@ -2003,8 +1928,7 @@ drawHoldX:
  ld hl, blockData
  add a,a ;x2
  add a,a ;x4
- add a,d ;x5
- add a,a ;x10
+ add a,a ;x8
  ld de,0
  ld e,a ;de = offset from blockData
  add hl, de ;block data ptr
@@ -2814,6 +2738,73 @@ keys:
 .db 0,0,0,0
 .db 0,0,0,0
 
+
+;will be used in button mapping
+buttonText:
+;g1
+ .db "GRAPH",0
+ .db "TRACE",0
+ .db "ZOOM",0
+ .db "WINDOW",0
+ .db "Y=",0
+ .db "2ND",0
+ .db "MODE",0
+ .db "DEL",0
+;g2
+ .db "ON",0 ;unobtainable
+ .db "SOT",0
+ .db "LN",0
+ .db "LOG",0
+ .db "X^2",0
+ .db "X^-1",0
+ .db "MATH",0
+ .db "ALPHA",0
+;g3
+ .db "0",0
+ .db "1",0
+ .db "4",0
+ .db "7",0
+ .db ",",0
+ .db "SIN",0
+ .db "APPS",0
+ .db "XT0N",0
+;g4
+ .db ".",0
+ .db "2",0
+ .db "5",0
+ .db "8",0
+ .db "(",0
+ .db "COS",0
+ .db "PRGM",0
+ .db "STAT",0
+;g5
+ .db "(-)",0
+ .db "3",0
+ .db "6",0
+ .db "9",0
+ .db "(",0
+ .db "TAN",0
+ .db "VARS",0
+ .db "",0
+;g6
+ .db "ENTER",0
+ .db "+",0
+ .db "-",0
+ .db "*",0
+ .db "/",0
+ .db "^",0
+ .db "CLEAR",0
+ .db "",0
+;g7
+ .db "DOWN",0
+ .db "LEFT",0
+ .db "RIGHT",0
+ .db "UP",0
+;.db "",0 ;does not exist
+;.db "",0
+;.db "",0
+;.db "",0
+
 ;key ids for important operations
 keyIDs:
 buttonID=0
@@ -3478,6 +3469,10 @@ slToMenu:
  call getStringPTRSelection
  ld (startMenuSelectMode + iDataPTRL),hl
 
+ ld a,(menuSelection)
+ inc a
+ ld (rMode),a 
+ 
  ld ix, startMenuData 
  jp activeMenu
  
@@ -3561,12 +3556,12 @@ setTheme:
  call setNumber
  
  ld a,(theme) ;value just set here
- ld hl,blockData + spriteID
- ld de,10
+ ld hl,blockGraphicData
  ld b,7
 replaceBlockSpriteID:
  ld (hl),a
- add hl,de
+ inc hl ;palette
+ inc hl ;next block spriteid
  djnz replaceBlockSpriteID
  ;all spriteid has been replaced, back to options
  
@@ -3645,72 +3640,6 @@ setButtonInfoDrop:
 ;draw a lot of text in a column
 ;with not much extra data
 
-;will be used in button mapping
-buttonText:
-;g1
- .db "GRAPH",0
- .db "TRACE",0
- .db "ZOOM",0
- .db "WINDOW",0
- .db "Y=",0
- .db "2ND",0
- .db "MODE",0
- .db "DEL",0
-;g2
- .db "ON",0 ;unobtainable
- .db "SOT",0
- .db "LN",0
- .db "LOG",0
- .db "X^2",0
- .db "X^-1",0
- .db "MATH",0
- .db "ALPHA",0
-;g3
- .db "0",0
- .db "1",0
- .db "4",0
- .db "7",0
- .db ",",0
- .db "SIN",0
- .db "APPS",0
- .db "XT0N",0
-;g4
- .db ".",0
- .db "2",0
- .db "5",0
- .db "8",0
- .db "(",0
- .db "COS",0
- .db "PRGM",0
- .db "STAT",0
-;g5
- .db "(-)",0
- .db "3",0
- .db "6",0
- .db "9",0
- .db "(",0
- .db "TAN",0
- .db "VARS",0
- .db "",0
-;g6
- .db "ENTER",0
- .db "+",0
- .db "-",0
- .db "*",0
- .db "/",0
- .db "^",0
- .db "CLEAR",0
- .db "",0
-;g7
- .db "DOWN",0
- .db "LEFT",0
- .db "RIGHT",0
- .db "UP",0
-;.db "",0 ;does not exist
-;.db "",0
-;.db "",0
-;.db "",0
- 
 pauseData:
  .db 2
 ;background box
@@ -3754,7 +3683,7 @@ gameOverData:
 gameOverText:
  .db "GAME",0
  .db "OVER",0
- 
+
 ;format: x ofs, y ofs, spriteID, palette
 spriteID = 8
 spritePAL= 9
@@ -3764,50 +3693,52 @@ PSS768CopiedData:
  .db  0, 0
  .db  1, 0
  .db  2, 0
- .db  0, 4
 ;L piece
  .db -1,-1
  .db -1, 0
  .db  0, 0
  .db  1, 0
- .db  0, 8
 ;J piece
  .db -1, 0
  .db  0, 0
  .db  1, 0
  .db  1,-1
- .db  0, 12
 ;O piece
  .db  0,-1
  .db  1,-1
  .db  1, 0
  .db  0, 0
- .db  0, 16
 ;S piece
  .db -1, 0
  .db  0, 0
  .db  0,-1
  .db  1,-1
- .db  0, 20
 ;T piece
  .db  0, 0
  .db -1, 0
  .db  0,-1
  .db  1, 0
- .db  0, 24
 ;Z piece
  .db -1,-1
  .db  0,-1
  .db  0, 0
  .db  1, 0
- .db  0, 28
-;. piece
+;. piece???
  .db  0, 0
  .db  0, 0
  .db  0, 0
  .db  0, 0
- .db  0, 31
 PSS768CopiedDataEnd:
+ 
+blockGraphicData:
+ .db  0, 4
+ .db  0, 8
+ .db  0, 12
+ .db  0, 16
+ .db  0, 20
+ .db  0, 24
+ .db  0, 28
+ .db  0, 31
  
 ;wall kicks and rotation data
 kicksNormal:
