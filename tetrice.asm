@@ -136,6 +136,7 @@ savThemeSub = 73 ;block theme id, etc.
 savHighscore = 74
 savHighSize = 8
 savSize = 512 ;save should not pass this size, kinda large.
+savScoreSize = savSize - savHighScore ;
 
 ;bit set/reset when an object must be updated
 redrawObjBit = 7
@@ -144,13 +145,18 @@ redrawObjBit = 7
 main:
  ld (preserveSP),sp
  call initLCD
+ 
+ call loadSaveVar ;get ptr to save data from appvar
+ inc de
+ inc de ;past size of appvar
+ ld (saveDataPTR),de
+ call loadSave ;actually read save data
+ 
  call initData
  call initKeyTimer
  
  call defaultInfo
  
- call loadSave
- ld (saveDataPTR),de
  
  jp mainMenu
  
@@ -1925,24 +1931,24 @@ drawHoldX:
  ;(1,2) optimally centers piece in hold box
  
  ld a,(holdT)
- ld d,a ;save d for later
- ld hl, blockData
- add a,a ;x2
- add a,a ;x4
- add a,a ;x8
+ add a,a
+ ld hl, blockGraphicData
  ld de,0
- ld e,a ;de = offset from blockData
- add hl, de ;block data ptr
- push hl
- ld de,spriteID
- add hl,de
+ ld e,a
+ 
+ add hl, de ;block graphic data ptr
  ld a, (hl)
  ld (tSpriteID),a
  inc hl ;block data + id + pal
  ld a, (hl)
  ld (tSpritePAL),a
 
- pop de ;bdptr
+ ld hl, blockData
+ sla e
+ sla e
+ add hl,de ;points to block data
+ ex de,hl
+ 
  jr drawAnyMino
 
 ;inputs:
@@ -2739,6 +2745,17 @@ keys:
 .db 0,0,0,0
 .db 0,0,0,0
 
+applyTheme:
+ ld a,(theme) ;value just set here
+ ld hl,blockGraphicData
+ ld b,7
+replaceBlockSpriteID:
+ ld (hl),a
+ inc hl ;palette
+ inc hl ;next block spriteid
+ djnz replaceBlockSpriteID
+ ;all spriteid has been replaced, back to option
+ ret
 
 ;will be used in button mapping
 buttonText:
@@ -2834,6 +2851,7 @@ mbuttonQuit = 14 * buttonDataSize + buttonData
 
 noRepeat = -1
 
+defaultButtonData:
 PSS1024CopiedData:
 ;buttonleft:
 .db 49, 7, 2, 0
@@ -2867,7 +2885,9 @@ PSS1024CopiedData:
 .db 15, noRepeat, noRepeat, 0
 ;buttonquit:
 .db 7, noRepeat, noRepeat, 0
+defaultButtonDataEnd:
 PSS1024CopiedDataEnd:
+defaultButtonDataSize = defaultButtonDataEnd - defaultButtonData
 
 ;ix = ptr to key data to check
 checkKeyDown:
@@ -3029,11 +3049,10 @@ pointsPerMini:
 pointsPerTLine:
  .db 4,8,12,16,24
 
-CETrisSavSize = 64
 CETrisSavVar:
  .db AppVarObj, "CETrisSV", 0
  
-loadSave:
+loadSaveVar:
  ld hl, CETrisSavVar
  call _Mov9ToOP1
  call _ChkFindSym
@@ -3047,17 +3066,68 @@ loadSave:
  call _ChkFindSym
  ;de=data ptr
  ret
-
+ 
 createSave:
  ld hl, CETrisSavVar
  call _Mov9ToOP1
- ld hl, CETrisSavSize
+ ld hl, savSize
  call _CreateAppVar
  ;de=data ptr
+ push de
+ ;needs to... put size at first (2 bytes!)
+ ld hl,savSize
+ ex de,hl
+ ld (hl),de
+ ;hl points to appvar begin
+ inc hl
+ inc hl
+ ;hl points to actual data
+ push hl
+ pop de
+ inc de ;de=hl+1
+ ld bc,savSize - 1
+ ld (hl),0
+ ldir ;zero out all data
+ ;put button info (after size)
+ pop de
+ push de
+ inc de
+ inc de ;de points to appvar begin (where button data goes)
+ ld hl, defaultButtonData
+ ld bc, defaultButtonDataSize
+ ldir ;copy button data to save data
+ ;default appvar name after buttons
+ ;(not necessary now/maybe ever?)
+ pop de
  ret
 
-;assumes loaded already in RAM
+;note: this reads data from an already loaded save
+;do not call before setting (saveDataPTR) to the data
+loadSave:
+ ld ix,(saveDataPTR) ;ix is ptr to save data
+ lea hl, ix+savKeys ;get hl as savedata+keys
+ ld de, buttonData 
+ ld bc, defaultButtonDataSize
+ ldir ;copy from ave
+ 
+ lea hl, ix+savThemeSub
+ ld a,(hl)
+ ld (theme),a ;yes
+ call applyTheme
+ ret 
+ 
+;assumes loaded and already in RAM
 saveSave:
+ ld ix,(saveDataPTR) ;ix is ptr to save data
+ ld hl, buttonData 
+ lea de, ix+savKeys ;get hl as savedata+keys
+ ld bc, defaultButtonDataSize
+ ldir ;copy from ave
+ 
+ lea hl, ix+savThemeSub
+ ld a,(theme)
+ ld (hl),a
+ 
  ld hl, CETrisSavVar
  call _Mov9ToOP1
  call _Arc_Unarc
@@ -3075,10 +3145,11 @@ initData:
  ld bc,PSS768CopiedDataEnd - PSS768CopiedData
  ldir
  
- ld hl,PSS1024CopiedData
- ld de,buttonData
- ld bc,PSS1024CopiedDataEnd - PSS1024CopiedData
- ldir
+ ;now read from SAVE
+ ;ld hl,PSS1024CopiedData
+ ;ld de,buttonData
+ ;ld bc,PSS1024CopiedDataEnd - PSS1024CopiedData
+ ;ldir
  
  ld a,30
  ld (lockDelay),a
@@ -3556,15 +3627,7 @@ setTheme:
  ld a,4
  call setNumber
  
- ld a,(theme) ;value just set here
- ld hl,blockGraphicData
- ld b,7
-replaceBlockSpriteID:
- ld (hl),a
- inc hl ;palette
- inc hl ;next block spriteid
- djnz replaceBlockSpriteID
- ;all spriteid has been replaced, back to options
+ call applyTheme
  
  ld ix, optionsMenuData
  jp activeMenu ;back to options menu
