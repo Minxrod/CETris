@@ -58,7 +58,7 @@ linesToNextLevel = PSS + 332
 timerT = PSS + 336
 lockTimer = PSS + 340
 globalTimer = PSS + 348
-highscore = PSS + 348
+highscore = PSS + 352
 
 ;data for various rules, stored as offset from rules
 ;garbage set
@@ -1640,11 +1640,22 @@ skipDraw2:
  ret
  
 gameEndInit:
+ call checkBest
+
+ ld ix,(drefIInfo)
+ call resetAllDrawCheck
+ ld ix,(drefIInfo)
+ call drawObjectsNoReset
  ld ix,(drefGameOver)
  call drawObjectsNoReset
  call swapVRamPTR
+ ;draw to 2nd buffer
+ ld ix,(drefIInfo)
+ call drawObjectsNoReset
  ld ix,(drefGameOver)
  call drawObjectsNoReset
+ call swapVRamPTR
+ 
  
 gameEndWait:
  call scanKeys
@@ -1657,6 +1668,57 @@ gameEndWait:
  call checkKeyDown
  jp c,exit ;end game
  jr gameEndWait
+ 
+checkBest:
+ ld ix,rules
+ bit rbitLowTime,(ix+rfScore)
+ jr nz, checkLowTime
+ ;unneeded due to order:
+ ;bit rScore,(ix+rfScore)
+ ;jr checkHighScore
+ 
+checkHighScore:
+ ld hl,(highscore)
+ ld de,(score)
+ or a,a
+ sbc hl,de
+ ;carry implies highscore < score 
+ ret nc ;return if no high score
+ ;set high score
+ ld hl,(score)
+ jr setBestScore
+ 
+checkLowTime:
+ ld hl,(highscore)
+ ld de,0
+ scf
+ sbc hl,de
+ jr c, setFirstTime;if subtracting 1 results in carry, highscore must be 0 and therefore invalid, so just set the current score.
+ 
+ ld hl,(highscore)
+ ld de,(globalTimer)
+ or a,a
+ sbc hl,de
+ ret c ;c implies best time < current time: no record
+ ;set low time
+setFirstTime:
+ ld hl,(globalTimer)
+ jr setBestScore
+ 
+setBestScore:
+ ld a,(ix+rMode)
+ ld ix,(saveDataPTR)
+ ld de,0
+ add a,a
+ add a,a
+ ld e,a
+ add ix,de ;add 4
+ add ix,de ;add 8
+ ld de,savHighscore
+ add ix,de ;ix = savedata + hscoreofs + modeofs
+ ld (highscore),hl ;store score
+ ld (ix),hl
+ ret
  
 eraseOldMino:
  ld hl, curStatus + midOfs
@@ -3253,7 +3315,7 @@ boxColor2= 15
 textColor= 35
 
 itemsInfo:
-.db 8 ;number of items
+.db 9 ;number of items
 fieldInfo:
 .db typeTetris
 .dw 0 ;x
@@ -3281,7 +3343,7 @@ holdInfo:
 .db 24
 .db textColor
 .dw gameText - SSSCopiedData
-.db 5, 0 ;don't matter cause' not a menu
+.db 7, 0 ;cursorid doesn't matter cause not a active menu
 scoreInfo:
 .db typeNumber
 .dw 208
@@ -3310,6 +3372,13 @@ timerInfo:
 .db textColor
 .dw globalTimer - PSS
 .db 8, boxcolor
+highscoreInfo:
+.db typeNumber
+.dw 208
+.db 72
+.db textColor
+.dw highScore - PSS
+.db 8, boxcolor
 
 gameText
  .db "Score:",0
@@ -3317,7 +3386,9 @@ gameText
  .db 0
  .db "Level:",0
  .db "Lines:",0
-
+ .db 0
+ .db " Best:",0
+ 
 SSSInfo = itemsInfo - SSSCopiedData + SSS
 
 menuInfo = menuObjData - SSSCopiedData
@@ -3501,12 +3572,12 @@ modeJumps:
  ld a,7 << 5 | 10
  jr setExcavate
 
-setLineRace: ;very similar haha
 setMarathon:
  ld ix,rules
  ld (ix+rfBasic), rMarathon
  ld (ix+rfExtra), rNull ;no extra rules
  ld (ix+rfWin), rLines ;win on line-clears
+ ld (ix+rfScore), rScore
  jr setLines
  
 setRetro:
@@ -3514,13 +3585,23 @@ setRetro:
  ld (ix+rfBasic), rRetro
  ld (ix+rfExtra), rNull ;no extra rules
  ld (ix+rfWin), rLines ;win on line-clears
+ ld (ix+rfScore), rScore
  jr setLines
 
+setLineRace:
+ ld ix,rules
+ ld (ix+rfBasic), rMarathon
+ ld (ix+rfExtra), rNull ;no extra rules
+ ld (ix+rfWin), rLines ;win on line-clears
+ ld (ix+rfScore), rTime
+ jr setLines
+ 
 setDig:
  ld ix,rules
  ld (ix+rfBasic), rMarathon
  ld (ix+rfExtra), rGenerated ;no extra rules
  ld (ix+rfWin), rRow0 ;win on line-clears
+ ld (ix+rfScore), rTime
  jr setGeneration
 
 setExcavate: 
@@ -3528,6 +3609,7 @@ setExcavate:
  ld (ix+rfBasic), rMarathon
  ld (ix+rfExtra), rGenerated ;no extra rules
  ld (ix+rfWin), rRow0 ;win on line-clears
+ ld (ix+rfScore), rTime
  jr setGenGGD
  
 setLines: 
@@ -3540,10 +3622,19 @@ slToMenu:
  ;replaces selected mode string
  call getStringPTRSelection
  ld (startMenuSelectMode + iDataPTRL),hl
-
+ 
+ ld ix, rules
  ld a,(menuSelection)
- inc a
- ld (rMode),a 
+ ld (ix+rMode),a
+ ld ix,(saveDataPTR)
+ ld de,0
+ add a,a
+ add a,a
+ ld e,a
+ add ix,de ;add 4
+ add ix,de ;add 8
+ ld hl,(ix+savHighScore) ;hl=score from save
+ ld (highscore),hl
  
  ld ix, startMenuData 
  jp activeMenu
