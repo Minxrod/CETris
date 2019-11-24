@@ -79,7 +79,7 @@ rfWin = 2 ;win condition currently set
 rfScore = 3 ;high score method
 
 rbitGameCont = 0
-rbitGameEndless = 1
+rbitGameWon = 1
 rbitSRSEnabled = 2
 rbitPreviewEnabled = 3
 rbitHoldEnabled = 4
@@ -99,7 +99,7 @@ rbitHighLine = 2
 
 rNull = 0
 rGame = 1 << rbitGameCont
-rEndless = 1 << rbitGameEndless ;unused in favor of clearing win condition check flags
+rGameWon = 1 << rbitGameWon ;if game was won or lost
 rSRS = 1 << rbitSRSEnabled
 rPreview = 1 << rbitPreviewEnabled
 rHold = 1 << rbitHoldEnabled 
@@ -142,6 +142,7 @@ savScoreSize = savSize - savHighScore ;
 redrawObjBit = 7
 
 ;main program
+;this is where the program starts + lotsa setup stuff
 main:
  ld (preserveSP),sp
  call initLCD
@@ -156,8 +157,6 @@ main:
  call initKeyTimer
  
  call defaultInfo
- 
- 
  jp mainMenu
  
 exit:
@@ -189,11 +188,14 @@ defaultInfo:
  ret 
 
 mainMenu:
- call defaultInfo ;ensure start menu is accurate
  ld ix,(drefMenu)
  jp activeMenu
  
 initGame:
+ ld ix,rules
+ set rbitGameCont, (ix+rfBasic) ;game is going
+ res rbitGameWon, (ix+rfBasic) ;game not won
+ 
  ld a,0
  ld (lines),a
 
@@ -467,6 +469,7 @@ update:
  ;game has ended, player won
  ld hl, rules
  res rbitGameCont, (hl)
+ set rbitGameWon, (hl) ;win by lines clear
  
 skipEndCheck:
  
@@ -689,6 +692,7 @@ clearLine:
  bit rbitRow0Clear, (ix+rfWin)
  jr z, skipGameEndR0 ;if row 0 is not the win condition, don't end game
  res rbitGameCont, (ix+rfBasic)
+ set rbitGameWon, (ix+rfBasic) ;you've won!
  
 skipGameEndR0: 
  push hl
@@ -1678,6 +1682,7 @@ checkBest:
  ;jr checkHighScore
  
 checkHighScore:
+;note: top outs for score are A-OK. Only timed games need to worry about "cheesing" for low scores.
  ld hl,(highscore)
  ld de,(score)
  or a,a
@@ -1689,6 +1694,10 @@ checkHighScore:
  jr setBestScore
  
 checkLowTime:
+ bit rbitGameWon,(ix+rfBasic)
+ ret z ;return if not set = not a win
+ ;since low times can be earned by topping out rapidly, do not count these
+ 
  ld hl,(highscore)
  ld de,0
  scf
@@ -2569,6 +2578,9 @@ getStringPTRSelection:
  add hl,de
  
  ld a,(menuSelection)
+ ;hl: pointer to string list
+ ;a: selection in list
+getStringInList:
  or a,a
  jr z, ptrOK ;selection is found
  
@@ -2585,6 +2597,7 @@ ptrOK:
  ;pointer is found to string
  ;hl = pointer
  or a,a
+ ld de,SSS
  sbc hl,de ;hl=ofs from SSS
  ret
  
@@ -3433,6 +3446,14 @@ menuJumps:
  
 setupGame:
  ld ix, startMenuData
+ 
+ ld hl, modeText
+ ld a,(rules+rMode) ;hm
+ call getStringInList
+ ld (startMenuSelectMode + iDataPTRL),hl
+ 
+ ld a,1
+ ld (level),a ;default to 1 please
  jp activeMenu
  
 gotoOptions:
