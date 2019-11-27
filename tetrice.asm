@@ -13,6 +13,7 @@ vRamSplit = vRam + vRamSplitSize
 ;variables and memory regions
 PSS = plotSScreen
 field = PSS
+fieldHeight = 25
 
 blockDataSize = 8
 blockGraphicSize = 2
@@ -262,7 +263,7 @@ initField:
  
 generateGarbage:
  ld ix, rules
- ld a,20
+ ld a,fieldHeight
  sub (ix+rGGA) ;garbage rows to generate
  ld d,a
  add a,a
@@ -592,7 +593,7 @@ gameEnd:
 checkLines:
  ld a,0
  ld (linesClear),a
- ld b,20
+ ld b, fieldHeight
  ld hl, field
  
 checkAllLines:
@@ -727,8 +728,9 @@ skipGameEndR0:
 newBlock:
  ld a,5
  ld (curX),a
- ld a,0
+ ld a,4
  ld (curY),a
+ xor a
  ld (curR),a
  ld (curStatus),a
  ld (timerT),a
@@ -761,8 +763,9 @@ determinedBlock:
  push af
  ld a,5
  ld (curX),a
- ld a,0
+ ld a,4
  ld (curY),a
+ xor a
  ld (curR),a
  ld (curStatus),a
  ld (lockTimer),a
@@ -869,7 +872,7 @@ checkBlocksRotateLeft:
  ld e,a
  ld a,(rY)
  add a,e
- cp 20
+ cp fieldHeight
  jr nc, noRotationLeft
  ld e,a
  
@@ -1036,7 +1039,7 @@ checkBlocksRotateRight:
  ld e,a ;e=-oldx
  ld a,(rY) 
  add a,e ;rY-oldX = new y location
- cp 20
+ cp fieldHeight
  jr nc, noRotationRight ;out of bounds
  ld e,a ;e=new y
  ;get x
@@ -1181,7 +1184,7 @@ checkBlocksInDown:
  ld c, (hl)
  ld a, (curY)
  add a,c
- cp 19
+ cp fieldHeight-1
  jr z, blockTooFarDown
  push bc
  push hl
@@ -1742,7 +1745,7 @@ eraseOldMino:
 drawNewMino:
  ld ix,(refField)
  ld hl, curData
- call drawMinoFromPTR
+ call drawPTRMino
  ret
  
 ;input: ix = info ptr, 1st elem. is # struct elems
@@ -1852,7 +1855,10 @@ drawFieldX:
  dec h
  ld l,c
  dec l
- push hl
+ push hl ;display coords should be [0,19] and [0,9]
+ ld a,fieldHeight - 20 ;find y coord of last 20 visible rows
+ add a,l ;l + ofs from top (5, if fieldHeight is 25)
+ ld l,a ;y=[0-19]+[fieldHeight-20] for reading field info
  call checkBlock
  cp NULL_BLOCK
  jr z,drawNullBlock
@@ -2021,14 +2027,6 @@ drawHoldX:
  ex de,hl
  
  jr drawAnyMino
-
-;inputs:
-;ix = obj data ptr
-;hl = ptr to curxy etc.
-
-drawMinoFromPTR:
- call setDataFromPTR
- jr drawAnyMino
  
 ;inputs:
 ;ix = obj data ptr
@@ -2064,6 +2062,12 @@ setDataFromPTR:
  pop de
  ret
  
+translateVisibleY:
+ ld a,(dmY)
+ sub fieldHeight-20 ;offset from visible coords
+ ld (dmY),a
+ ret
+ 
 ;requires ix as obj data ptr
 ;hl as setDataFromPTR ptr to curdata etc
 ;also, nice
@@ -2072,13 +2076,17 @@ nullPTRMino:
  ld a,0
  ld (tSpriteID),a
  ld (tSpritePAL),a
- jr drawAnyMino
  
-drawCurrentMino:
- ld hl, curData
- call setDataFromPTR
- ;jr drawAnyMino
+ call translateVisibleY
+ jr drawAnyMino
 
+;ix = obj data ptr
+;hl = setDataFromPTR ptr
+drawPTRMino:
+ call setDataFromPTR
+ call translateVisibleY
+ ;jr drawAnyMino
+ 
 ;inputs: de=block data struct
 ;ix = obj data ptr
 ;dmx,dmy,dmox,dmoy
@@ -3334,8 +3342,8 @@ fieldInfo:
 .dw 0 ;x
 .db 0 ;y
 .db 0 ;a (does nothing?)
-.dw 0 ;uses refSprite data ptr
-.db 10, 20 ;width, height
+.dw field - PSS ;eventually, consider making the field memory movable
+.db 10, 20 ;width, height (for display only)
 holdInfo:
 .db typeHold
 .dw 132
