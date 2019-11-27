@@ -22,7 +22,7 @@ blockGraphicSize = 2
 csLockedBit = 0    ;locked block bit
 csNewBlockBit = 1  ;prev. frame requests new block
 csClearLineBit = 2 ;if block cleared a line
-csGarbageBit = 3   ;apply garbage stored
+csGarbageBit = 3   ;apply garbage stored (unused)
 
 holdT= PSS + 256
 ;current mino data
@@ -60,6 +60,8 @@ timerT = PSS + 336
 lockTimer = PSS + 340
 globalTimer = PSS + 348
 highscore = PSS + 352
+garbageTimer = PSS + 356
+queuedGarbage = PSS + 360
 
 ;data for various rules, stored as offset from rules
 ;garbage set
@@ -336,6 +338,58 @@ skipResetA0:
  ld e,a 
  jr backAgainGenerate
  
+incGarbage:
+ ;increment garbage timer
+ ld hl,rules+rRGT
+ ld a,(garbageTimer)
+ inc a
+ ld (garbageTimer),a
+ cp (hl) ;check if timer needs to inc queue garbage
+ ret c
+ xor a
+ ld (garbageTimer),a
+ 
+ ld a,(queuedGarbage)
+ inc a
+ ld (queuedGarbage),a
+ ret
+
+;input: ix=rules
+raiseGarbage:
+ ld a,(queuedGarbage)
+ cp 0
+ ret z ;don't raise garbage if there's none to raise!
+ ld b,a
+ xor a
+ ld (queuedGarbage),a
+ 
+;raise field and generate garbage as many times as needed
+raiseOneRow:
+ push bc
+ ld de,field
+ ld hl,field+10
+ ld bc,245
+ ldir ;copy fielddata up/shift field up
+ 
+ ;zero last row
+ ld hl,fieldHeight - 1 * 10 + field
+ ld de,fieldHeight - 1 * 10 + field + 1
+ ld bc,9
+ ld (hl),NULL_BLOCK
+ ldir
+ 
+ ld b, (ix+rRGD) ;rising garbage density
+ ld hl,fieldHeight - 1 * 10 + field ;last row of field
+ call generateGarbageRow
+ pop bc
+ djnz raiseOneRow
+ 
+ ld hl,(refField)
+ res redrawObjBit, (hl) ;ix+0 ix+objtype
+ ld hl,curStatus
+ set csGarbageBit, (hl) ;garbage rose on this frame = field redraw this frame
+ ret
+
 shiftOldData:
  ;copy old mino data
  ;to use for clearing old draws
@@ -455,7 +509,7 @@ dropAllTimes:
  pop bc
  djnz dropAllTimes
  jr dropReturn
- 
+
 update:
  ld hl, curStatus + midOfs ;last frame status
  bit csNewBlockBit, (hl) ;request new block
@@ -490,7 +544,7 @@ skipEndCheck:
  jr z, dropMultiple
  jr c, dropMultiple
  cp b
- jr c, drop
+ jp c, drop
 
  ld ix,buttonSoft
  call checkKeyDown
@@ -499,6 +553,8 @@ skipEndCheck:
  call checkKeyDown
  jr c, harddrop
 dropReturn:
+
+ call incGarbage
  
  ;check if lock
  ld a,(lockTimer)
@@ -510,6 +566,7 @@ dropReturn:
  jr z, lock
 skipLockCheck:
  ret
+
 hardDrop:
  ld ix,rules
  bit rbitHardDropEnabled,(ix+0)
@@ -593,6 +650,11 @@ gameEnd:
  ret
  
 checkLines:
+ ;check if garbage rises
+ ld ix,rules
+ bit rbitGarbageRising, (ix+rfExtra)
+ call nz,raiseGarbage
+
  ld a,0
  ld (linesClear),a
  ld b, fieldHeight
@@ -1630,34 +1692,34 @@ divideByBPP:
 drawGame:
  ld ix,(drefIInfo)
  call drawObjectsNoReset
- 
- ld hl, curStatus
- bit csClearLineBit, (hl)
- jr nz, skipDraw1
- ld hl, curStatus+midOfs
- bit csClearLineBit, (hl)
- jr nz, skipDraw1
- 
- call eraseOldMino
- call drawNewMino
+ call updateMino
 
-skipDraw1:
  call swapVRamPTR
  
  ld ix,(drefIInfo)
  call drawObjects
+ call updateMino 
+ ret
  
+;checks if mino update is needed
+;if yes, draws mino
+updateMino:
  ld hl, curStatus
  bit csClearLineBit, (hl)
- jr nz, skipDraw2
+ ret nz
  ld hl, curStatus + midOfs
  bit csClearLineBit, (hl)
- jr nz, skipDraw2
-
+ ret nz
+ 
+ ld hl, curStatus
+ bit csGarbageBit, (hl)
+ ret nz
+ ld hl, curStatus + midOfs
+ bit csGarbageBit, (hl)
+ ret nz
+ 
  call eraseOldMino
  call drawNewMino
-
-skipDraw2:
  ret
  
 gameEndInit:
@@ -1694,6 +1756,8 @@ checkBest:
  ld ix,rules
  bit rbitLowTime,(ix+rfScore)
  jr nz, checkLowTime
+ bit rbitHighLine,(ix+rfScore)
+ jr nz, checkHighLine
  ;unneeded due to order:
  ;bit rScore,(ix+rfScore)
  ;jr checkHighScore
@@ -1708,6 +1772,17 @@ checkHighScore:
  ret nc ;return if no high score
  ;set high score
  ld hl,(score)
+ jr setBestScore
+  
+checkHighLine:
+ ld hl,(highscore)
+ ld de,(lines)
+ or a,a
+ sbc hl,de
+ ;carry implies highscore < score 
+ ret nc ;return if no high score
+ ;set high score
+ ld hl,(lines)
  jr setBestScore
  
 checkLowTime:
@@ -3559,7 +3634,7 @@ selectModeMenu:
  .db 8
  .db textColor
  .dw modeText - SSSCopiedData
- .db 14, 2 ;# items, cursorID within menuObjData
+ .db 15, 2 ;# items, cursorID within menuObjData
  ;cursor
  .db typeString
  .dw 0
@@ -3583,6 +3658,7 @@ modeText:
 .db "EXCAVATE-10-LIGHT",0
 .db "EXCAVATE-10-MEDIUM",0
 .db "EXCAVATE-10-DENSE",0
+.db "DIG CHALLENGE",0
 modeJumps:
  jp setupGame ;prev menu
  ;note: ld a,x/jr setLines = 4byte alignment
@@ -3614,7 +3690,9 @@ modeJumps:
  jr setExcavate
  ld a,7 << 5 | 10
  jr setExcavate
-
+ ld a,180
+ jr setRising
+ 
 setMarathon:
  ld e,0
  call setModeFromE
@@ -3639,6 +3717,11 @@ setExcavate:
  ld e,3
  call setModeFromE
  jr setGenGGD
+
+setRising:
+ ld e,4
+ call setModeFromE
+ jr setRisingInfo
  
 setLines:
  cp 0
@@ -3690,11 +3773,17 @@ eback3:
  ld (ix+rGGD),a
  jr slToMenu
  
+setRisingInfo:
+ ld (ix+rRGT),a
+ ld (ix+rRGD),9
+ jr slToMenu
+ 
 modeData:
  .db rMarathon, rNull, rLines, rScore ;marathon
  .db rRetro, rNull, rLines, rScore ;retro
  .db rMarathon, rNull, rLines, rTime ;line race
  .db rMarathon, rGenerated, rRow0, rTime ;dig/excavate
+ .db rMarathon, rRising, rNull, rLine
  
 setModeFromE:
  ld b,e
