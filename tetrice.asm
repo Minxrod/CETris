@@ -85,6 +85,7 @@ rbitSRSEnabled = 2
 rbitPreviewEnabled = 3
 rbitHoldEnabled = 4
 rbitHardDropEnabled = 5
+rbitBagEnabled = 6
 
 rbitCascadeGravity = 0
 rbitGarbageRising = 1
@@ -105,6 +106,7 @@ rSRS = 1 << rbitSRSEnabled
 rPreview = 1 << rbitPreviewEnabled
 rHold = 1 << rbitHoldEnabled 
 rHardDrop = 1 << rbitHardDropEnabled
+rBag = 1 << rbitBagEnabled
 
 rCascade = 1 << rbitCascadeGravity
 rRising = 1 << rbitGarbageRising
@@ -118,7 +120,7 @@ rScore = 1 << rbitHighScore
 rTime = 1 << rbitLowTime
 rLine = 1 << rbitHighLine 
 
-rMarathon = rGame | rSRS | rPreview | rHold | rHardDrop
+rMarathon = rGame | rSRS | rPreview | rHold | rHardDrop | rBag
 rRetro = rGame
 
 lockDelay = PSS + 760
@@ -738,7 +740,19 @@ newBlock:
  ld a,LOCK_DISABLE
  ld (lockTimer),a
  
- call getNextBagItem
+ ;something's kinda funny here.
+ ;newBlockAgain:
+ ;ld hl,rules
+ ;bit rbitBagEnabled,(hl)
+ ;call z, rand ;if bag is off, use regular random
+ ;and $07
+ ;cp RANDOM_NULL
+ ;jr z,newBlockAgain
+ 
+ ;ld hl,rules
+ ;bit rbitBagEnabled,(hl)
+ call getNextBagItem ;if bag enabled, use bag random
+ 
  ld (curT),a
  ld ix,blockData
  ld d,a
@@ -3602,46 +3616,31 @@ modeJumps:
  jr setExcavate
 
 setMarathon:
- ld ix,rules
- ld (ix+rfBasic), rMarathon
- ld (ix+rfExtra), rNull ;no extra rules
- ld (ix+rfWin), rLines ;win on line-clears
- ld (ix+rfScore), rScore
+ ld e,0
+ call setModeFromE
  jr setLines
  
 setRetro:
- ld ix,rules
- ld (ix+rfBasic), rRetro
- ld (ix+rfExtra), rNull ;no extra rules
- ld (ix+rfWin), rLines ;win on line-clears
- ld (ix+rfScore), rScore
+ ld e,1
+ call setModeFromE
  jr setLines
 
 setLineRace:
- ld ix,rules
- ld (ix+rfBasic), rMarathon
- ld (ix+rfExtra), rNull ;no extra rules
- ld (ix+rfWin), rLines ;win on line-clears
- ld (ix+rfScore), rTime
+ ld e,2
+ call setModeFromE
  jr setLines
  
 setDig:
- ld ix,rules
- ld (ix+rfBasic), rMarathon
- ld (ix+rfExtra), rGenerated ;no extra rules
- ld (ix+rfWin), rRow0 ;win on line-clears
- ld (ix+rfScore), rTime
+ ld e,3
+ call setModeFromE
  jr setGeneration
 
 setExcavate: 
- ld ix,rules
- ld (ix+rfBasic), rMarathon
- ld (ix+rfExtra), rGenerated ;no extra rules
- ld (ix+rfWin), rRow0 ;win on line-clears
- ld (ix+rfScore), rTime
+ ld e,3
+ call setModeFromE
  jr setGenGGD
  
-setLines: 
+setLines:
  cp 0
  jr z, setNoWin
  ld (ix+rLCW),a
@@ -3690,6 +3689,29 @@ eback3:
  inc a ;generate 1-8 density, not 0-7 because 0 is pointless anyways
  ld (ix+rGGD),a
  jr slToMenu
+ 
+modeData:
+ .db rMarathon, rNull, rLines, rScore ;marathon
+ .db rRetro, rNull, rLines, rScore ;retro
+ .db rMarathon, rNull, rLines, rTime ;line race
+ .db rMarathon, rGenerated, rRow0, rTime ;dig/excavate
+ 
+setModeFromE:
+ ld b,e
+ ld de,0
+ push de
+ ld e,b ;ensure de in 1 byte
+ ld hl, modeData - SSSCopiedData + SSS
+ add hl,de
+ add hl,de
+ add hl,de
+ add hl,de ;4x mode in e
+ ld de,rules
+ pop bc ;bc=0
+ ld c,4
+ ldir ;copy from modedata+mode*4 to rules
+ ld ix,rules ;useful
+ ret
  
 optionsMenuData:
  .db 5
