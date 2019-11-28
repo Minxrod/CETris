@@ -89,9 +89,11 @@ rbitHoldEnabled = 4
 rbitHardDropEnabled = 5
 rbitBagEnabled = 6
 
-rbitCascadeGravity = 0
+rbitunusedextra = 0
 rbitGarbageRising = 1
 rbitGarbageInitial = 2
+rbitCascadeGravity = 3
+rbitCascadeAnimation = 4
 
 rbitLinesClear = 0
 rbitRow0Clear = 1 ;for garbage/generated games
@@ -110,9 +112,11 @@ rHold = 1 << rbitHoldEnabled
 rHardDrop = 1 << rbitHardDropEnabled
 rBag = 1 << rbitBagEnabled
 
-rCascade = 1 << rbitCascadeGravity
+rUnused = 1 << rbitunusedextra
 rRising = 1 << rbitGarbageRising
 rGenerated = 1 << rbitGarbageInitial
+rCascade = 1 << rbitCascadeGravity
+rCascadeAnim = 1 << rbitCascadeAnimation
 
 rLines = 1 << rbitLinesClear
 rRow0 = 1 << rbitRow0Clear
@@ -124,6 +128,8 @@ rLine = 1 << rbitHighLine
 
 rMarathon = rGame | rSRS | rPreview | rHold | rHardDrop | rBag
 rRetro = rGame
+
+rCascadeExtra = rCascade | rCascadeAnim
 
 lockDelay = PSS + 760
 theme = PSS + 764 ;precedes blockData
@@ -649,14 +655,7 @@ gameEnd:
  res rBitGameCont, (ix+0) ;game is not going
  ret
  
-checkLines:
- ;check if garbage rises
- ld ix,rules
- bit rbitGarbageRising, (ix+rfExtra)
- call nz,raiseGarbage
-
- ld a,0
- ld (linesClear),a
+checkLineClears:
  ld b, fieldHeight
  ld hl, field
  
@@ -681,11 +680,27 @@ noIncrementE:
  call z, clearLine
  pop bc
  djnz checkAllLines
+ ret
+ 
+checkLines:
+ ;check if garbage rises
+ ld ix,rules
+ bit rbitGarbageRising, (ix+rfExtra)
+ call nz,raiseGarbage
+
+ ld a,0
+ ld (linesClear),a
+ call checkLineClears
  
  ;add to lines cleared
  ld a,(linesClear)
  cp 0
- jr z, noLinesClear
+ jp z, noLinesClear
+ 
+ ld ix,rules
+ bit rbitCascadeGravity,(ix+rfExtra)
+ call nz,cascadeBlocks
+ 
  ;must redraw field, update scores, etc.
  ld ix, (refField)
  res redrawObjBit, (ix+iDataType)
@@ -702,6 +717,7 @@ noIncrementE:
  ld hl, curStatus
  set csClearLineBit, (hl) ;clear bit 
  
+ ld a,(linesClear)
  ld de,0
  ld e,a ;de is lines cleared
  ld hl,(lines)
@@ -789,6 +805,65 @@ skipGameEndR0:
  pop hl
  ret
  
+cascadeBlocks:
+ ld hl,(refField)
+ res redrawObjBit, (hl) ;only applies to
+ 
+ ld b,fieldHeight-1
+applyGravity:
+ push bc
+ 
+ ;apply from bottom of field up,
+ ;fieldHeight number of times
+ ld hl,fieldHeight-1 * 10 + field - 1 
+ ld de,fieldHeight * 10 + field - 1
+ ld b,240
+ ld c,0
+applyGravityOnce:
+ ld a,NULL_BLOCK
+ cp (hl)
+ jr z,noCopyNoSwap
+ ;copy block down
+ ex de,hl
+ cp (hl)
+ jr nz,noCopy ;not a null: no copy down possible
+ ;block can be copied
+ inc c ;copy counter
+ ld a,(de)
+ ld (hl),a
+ ld a,NULL_BLOCK
+ ld (de),a
+ 
+noCopy:
+ ex de,hl ;swap back ptrs to field
+noCopyNoSwap:
+ dec de ;advance ptrs up field
+ dec hl ;so, reading field backwards: dec ptrs
+ djnz applyGravityOnce
+ 
+ ld ix,rules
+ bit rbitCascadeAnimation,(ix+rfExtra)
+ jr z,noCascadeAnim
+ push bc
+ push hl
+ push de
+ ld ix,(drefIInfo)
+ call drawObjectsNoReset
+ call swapVRamPTR
+ pop de
+ pop hl
+ pop bc
+noCascadeAnim:
+ xor a
+ cp c
+ pop bc ;for djnz
+ jr z,noCopiesLeft
+ djnz applyGravity
+noCopiesLeft:
+
+ call checkLineClears
+ ret
+ 
 newBlock:
  ld a,5
  ld (curX),a
@@ -810,9 +885,9 @@ newBlock:
  ;and $07
  ;cp RANDOM_NULL
  ;jr z,newBlockAgain
- 
  ;ld hl,rules
  ;bit rbitBagEnabled,(hl)
+ 
  call getNextBagItem ;if bag enabled, use bag random
  
  ld (curT),a
@@ -3215,7 +3290,7 @@ tSpritePAL:
 linesClear:
  .db 0
 pointsPerLine:
- .db 0,1,3,5,8
+ .db 0,1,3,5,8,11,15,20,26,33,41,50
 pointsPerMini:
  .db 1,2
 pointsPerTLine:
@@ -3342,8 +3417,8 @@ SSSCopiedData:
 dataReferences:
 .dl spriteData ;std sprites like blocks, field, etc
 .dl fontData ;font data. 
-.dl characterData ;character data
-.dl bgData ;background tile data
+.dl 0 ;idea scrapped for performance reasons
+.dl bgData ;background data
 .dl paletteData ;palette data
 .dl menuObjData ;menu data
 .dl pauseData
@@ -3380,7 +3455,7 @@ references:
 .dl levelInfo - itemsInfo + SSSInfo
 .dl scoreInfo - itemsInfo + SSSInfo
 .dl linesInfo - itemsInfo + SSSInfo
-.dl charInfo - itemsInfo + SSSInfo
+.dl 0 ;planned but scrapped for performance
 .dl timerInfo - itemsInfo + SSSInfo
 
 refSize = 3
@@ -3390,7 +3465,7 @@ refHold = refSize * 1 + refOfs
 refLevel = refSize * 2 + refOfs
 refScore = refSize * 3 + refOfs
 refLines = refSize * 4 + refOfs
-refChar = refSize * 5 + refOfs
+;refChar = refSize * 5 + refOfs
 refTimer = refSize * 6 + refOfs
 
 ;various equates for itemsInfo
@@ -3634,7 +3709,7 @@ selectModeMenu:
  .db 8
  .db textColor
  .dw modeText - SSSCopiedData
- .db 15, 2 ;# items, cursorID within menuObjData
+ .db 18, 2 ;# items, cursorID within menuObjData
  ;cursor
  .db typeString
  .dw 0
@@ -3650,15 +3725,18 @@ modeText:
 .db "RETRO-150",0
 .db "RETRO-200",0
 .db "RETRO-ENDLESS",0
-.db "LINE RACE-20",0 ;diff from marathon: hs based on time, not points
+.db "LINE RACE-20",0
 .db "LINE RACE-40",0
 .db "DIG-5",0
 .db "DIG-10",0
 .db "DIG-15",0
+.db "DIG CHALLENGE",0
 .db "EXCAVATE-10-LIGHT",0
 .db "EXCAVATE-10-MEDIUM",0
 .db "EXCAVATE-10-DENSE",0
-.db "DIG CHALLENGE",0
+.db "CASCADE-150",0
+.db "CASCADE-200",0
+.db "CASCADE-ENDLESS",0
 modeJumps:
  jp setupGame ;prev menu
  ;note: ld a,x/jr setLines = 4byte alignment
@@ -3684,14 +3762,20 @@ modeJumps:
  jr setDig
  ld a,15
  jr setDig
+ ld a,180
+ jr setRising
  ld a,2 << 5 | 10
  jr setExcavate
  ld a,5 << 5 | 10
  jr setExcavate
  ld a,7 << 5 | 10
  jr setExcavate
- ld a,180
- jr setRising
+ ld a,150
+ jr setCascade
+ ld a,200
+ jr setCascade
+ ld a,0
+ jr setCascade
  
 setMarathon:
  ld e,0
@@ -3723,11 +3807,16 @@ setRising:
  call setModeFromE
  jr setRisingInfo
  
+setCascade:
+ ld e,5
+ call setModeFromE
+ jr setLines
+ 
 setLines:
  cp 0
  jr z, setNoWin
  ld (ix+rLCW),a
-
+ 
  ;return to setup menu
 slToMenu:
  ;replaces selected mode string
@@ -3784,6 +3873,7 @@ modeData:
  .db rMarathon, rNull, rLines, rTime ;line race
  .db rMarathon, rGenerated, rRow0, rTime ;dig/excavate
  .db rMarathon, rRising, rNull, rLine
+ .db rMarathon, rCascadeExtra, rLines, rScore ;cascade
  
 setModeFromE:
  ld b,e
