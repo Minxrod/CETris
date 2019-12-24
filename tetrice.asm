@@ -149,6 +149,12 @@ savHighSize = 8
 savSize = 512 ;save should not pass this size, kinda large.
 savScoreSize = savSize - savHighScore ;
 
+;drawing stuff
+drawMinoErase = 0
+drawMinoHalf = 1
+drawMinoDark = 2
+;drawMinoFromPTR = 3 ;no longer useful
+
 ;bit set/reset when an object must be updated
 redrawObjBit = 7
 
@@ -168,6 +174,16 @@ main:
  call initKeyTimer
  
  call defaultInfo
+ 
+ ld a,5
+ ld de,32
+ ld l,48
+ ld h,0
+ call drawMinoFromType
+ call swapVRamPTR
+ ld ix, mbuttonConfirm
+ call waitButton
+ 
  jp mainMenu
  
 exit:
@@ -865,6 +881,9 @@ noCopiesLeft:
  ret
  
 newBlock:
+ ld hl,(refPreview)
+ res redrawObjBit, (hl)
+
  ld a,5
  ld (curX),a
  ld a,4
@@ -1547,6 +1566,7 @@ putClearXLoop:
  pop hl
  ret
  
+;h=bpp id
 drawSpriteCustomBPP:
  push hl
  push de
@@ -1566,6 +1586,7 @@ drawSpriteCustomBPP:
 ;inputs: 
 ;ix = spritedataptr
 ;de = x
+;h = bpp id
 ;l = y
 ;b = sizey
 ;c = sizex (note: BYTES not PIXELS)
@@ -1576,27 +1597,43 @@ drawSprite:
  ld (smcPutPixel+1),de
  pop de
 drawSpriteSetBPP:
+ bit 2, h
+ jr z, noScale
+ srl b ;half sizey
+noScale:
  push de
- ld h,0
- ld d,0 ;save L = Y
- ld e,l
- add hl,hl ;2y
- add hl,hl ;4y
- add hl,de ;5y
- add hl,hl ;10y
- add hl,hl ;20y
- add hl,hl ;40y
- add hl,hl ;80y
- add hl,hl ;160y
- add hl,hl ;320y
- pop de
+ ld de,0
+ ld d,l
+ ld e,0
+ ld hl,0
+ add hl,de ;add 256L
+ srl d
+ rr e
+ srl d
+ rr e
+ add hl,de ;add 64L: 320L total 
+ pop de ;is this better than below? idk
+ ;push de
+ ;ld h,0
+ ;ld d,0 ;save L = Y
+ ;ld e,l
+ ;add hl,hl ;2y
+ ;add hl,hl ;4y
+ ;add hl,de ;5y
+ ;add hl,hl ;10y
+ ;add hl,hl ;20y
+ ;add hl,hl ;40y
+ ;add hl,hl ;80y
+ ;add hl,hl ;160y
+ ;add hl,hl ;320y
+ ;pop de
  add hl,de ;320Y+X
  ld de, (vramOffPtr) ;to second half of vRam, for double-buffering
  add hl,de ;320Y+x+vRam
 ;hl=vramptr ix=data b=sizeY c=sizeX a=pal 
 putSpriteYLoop:
  push bc
- ld b,c
+ ld b,c ;size x still
  push hl ;save ptr to graph
 putSpriteXLoop:
  push bc
@@ -1611,30 +1648,52 @@ smcPutPixel: ;add 1 for CALL address
  djnz putSpriteYLoop
  ret
 
-;jp really only for padding right now
-;so that indexes are *4 instead of *3
 ppbpp:
  jp putPixel1bpp
  jp putPixel2bpp
  jp putPixel4bpp
  jp putPixel8bpp
- 
+ jp put1bppHalfScale
+ jp put2bppHalfScale
+ jp put4bppHalfScale
+ jp put8bppHalfScale
+
 ;a=pal
 ;ix=data ptr
 ;hl=vram ptr
 putPixel8bpp:
- push af
- ld a,(ix+0)
- cp 0 ;check if no color
+ ld b,a ;b=palette
+ ld a,(ix+0) ;pixel color
+ cp 0 ;check if no color/transparent color
  jp z,transPixel8
- pop af
- push af
- add a,(ix+0) ;add color to palette ofs
+ add a,b ;add color to palette ofs
  ld (hl),a
 transPixel8:
- pop af
+ ld a,b
  inc ix ;sprite data index
  inc hl ;coords
+ ret
+
+put8bppHalfScale:
+ ld e,a ;e=palette
+ ld a,(ix+0) ;pixel color
+ cp 0 ;check if no color/transparent color
+ jp z,transPixel8h
+ add a,e ;add color to palette ofs
+ ld (hl),a
+transPixel8h:
+ inc ix ;sprite data index
+ inc ix
+ inc hl ;coords
+ 
+ ld a,1
+ cp b
+ ld a,e
+ ret nz ;return if not last x loc
+ ;c is still the width of X
+ ld de,0
+ ld e,c ;add byte width to ix to skip next row
+ add ix,de
  ret
  
 ;a=pal
@@ -1668,6 +1727,31 @@ noPut2ndPixel:
  ld a,c
  ret
 
+put4bppHalfScale:
+ ld d,a ;save palette ofs
+ ld a,(ix+0)
+ srl a
+ srl a
+ srl a
+ srl a
+ cp 0
+ jr z, noPutPixelh
+ add a,d ;add palette ofs to color
+ ld (hl),a ;load nibble + palette ofs
+noPutPixelh:
+ inc hl ;next coord
+ inc ix ;next data chunk
+ 
+ ld a,1
+ cp b
+ ld a,d
+ ret nz ;return if not last x loc
+ ;c is still the width of X
+ ld de,0
+ ld e,c ;add byte width to ix to skip next row
+ add ix,de
+ ret
+ 
 ;a=palette ofs
 ;hl=vram ptr
 ;ix=data ptr
@@ -1692,6 +1776,39 @@ trans2bit:
  ld a,d
  ret
  
+put2bppHalfScale:
+ push bc
+ ld d,a ;save palette ofs
+ ld e,(ix+0)
+ ld b,2
+putPixel2h:
+ xor a ;a=0
+ rlc e
+ rla
+ rlc e
+ rla ;get 2 bits from c into a
+ rlc e
+ rlc e ;skip next 2 bits
+ cp 0
+ jr z, trans2h
+ add a,d ;add pal and ofs
+ ld (hl),a
+trans2h:
+ inc hl
+ djnz putPixel2h
+ inc ix
+ pop bc
+
+ ld a,1
+ cp b
+ ld a,d
+
+ ret nz ;return if b!=1
+ ld de,0
+ ld e,c
+ add ix,de
+ ret
+ 
 ;a=palette ofs
 ;ix=data ptr
 ;hl=vram ptr
@@ -1712,6 +1829,36 @@ noPutPixelBit:
  inc ix ;done with this byte of data
  ret
  
+put1bppHalfScale:
+ push bc
+ ld c,(ix+0)
+ ld b,4
+ ;new:
+ ;c=bit data
+ ;b=pixel count
+putPixelBith:
+ rlc c ;get bit from c
+ ;if bit is zero, pixel is transparent.
+ jr nc, noPutPixelBith ;skip to inc location
+ ld (hl),a ;save to location
+noPutPixelBith:
+ inc hl ;next
+ rlc c
+ djnz putPixelBith
+ inc ix ;done with this byte of data
+ pop bc
+ 
+ ld d,a
+ ld a,1
+ cp b
+ ld a,d
+
+ ret nz ;return if b!=1
+ ld de,0
+ ld e,c
+ add ix,de
+ ret
+ 
 ;input: h
 ;destroys: b
 ;output: c = 1 << h
@@ -1724,12 +1871,23 @@ shiftLoop:
  djnz shiftLoop
  rrc c
  ret
- 
+
  ;draws a block from coords + set tSpriteId, tSpritePAL
  ;no bounds check 
  ;accepts (DE, L) as coordinates
  ;still needs tSpriteID and tSpritePAL
+
+ ;drawOneBlockHalfScale: 
+ ;ld ix, smcScaleBPP
+ ;set 1,(ix+1)
+ ;jr drawOneBlockShared
+ 
 drawOneBlockNoGrid:
+ ;ld ix, smcScaleBPP
+ ;res 1,(ix+1)
+ ;jr drawOneBlockShared
+
+;drawOneBlockShared:
  ld ix, (drefSprite)
  ld h, (ix) ;get bpp
  inc ix
@@ -1760,10 +1918,12 @@ divideByBPP:
  djnz divideByBPP
  ld b,12
  ld a, (tSpritePAL)
+ ;smcScaleBPP:
+ ;res 3, h ;default is res: smc to SET if half
  call drawSpriteCustomBPP
  ;pop hl ;restore old coordinates
  ret
-
+ 
 drawGame:
  ld ix,(drefIInfo)
  call drawObjectsNoReset
@@ -1813,7 +1973,6 @@ gameEndInit:
  ld ix,(drefGameOver)
  call drawObjectsNoReset
  call swapVRamPTR
- 
  
 gameEndWait:
  call scanKeys
@@ -1902,13 +2061,13 @@ eraseOldMino:
  ret nz ;don't clear a locked mino
  
  ld ix,(refField)
- ld hl, midData
+ ld de, midData
  call NullPTRMino
  ret
  
 drawNewMino:
  ld ix,(refField)
- ld hl, curData
+ ld de, curData
  call drawPTRMino
  ret
  
@@ -1950,8 +2109,7 @@ drawObjectNoReset:
  ld a,$c9 ;ret = $c9
  ld (smcRedrawReset),a
 ;input: ix = data ptr to object
-;note: no guarantees on data ptr validity on return
-;note: only sets 1st bit
+;note: only sets 7st bit
 drawObject:
  push ix
  call drawObjectJump
@@ -2041,9 +2199,9 @@ drawFieldX:
 drawNullBlockReturn:
  pop hl ;use same grid coords, but operate differently
  ld e,h ;save e=x
- ld h,12
+ ld h,(ix+iDataA)
  mlt hl ;hl = 12*y implies l=12*y since y<20
- ld d,12
+ ld d,(ix+iDataA)
  mlt de ;de = 12*(x + xOfs)
  ;(de, l) are the coordinates
  ;now, layout offset must be added.
@@ -2130,9 +2288,9 @@ drawHoldX:
  ld l,c
  dec l
  ld e,h ;save e=x
- ld h,12
+ ld h,(ix+iDataA)
  mlt hl ;hl = 12*y implies l=12*y since y<20
- ld d,12
+ ld d,(ix+iDataA)
  mlt de ;de = 12*(x + xOfs)
  ;(de, l) are the coordinates
  ;now, layout offset must be added.
@@ -2157,156 +2315,358 @@ drawHoldX:
  ld a,(holdT)
  cp NULL_BLOCK
  ret z ;don't draw if it's empty!
- 
- ld a,(ix+iDataXL)
- ld (dmOX),a
- ld a,(ix+iDataXH)
- ld (dmOX+1),a
- ld a,(ix+iDataY)
- ld (dmOX+2),a
- 
- ld a,1
- ld (dmX),a
- ld a,2
- ld (dmY),a
- ;(1,2) optimally centers piece in hold box
- 
- ld a,(holdT)
- add a,a
- ld hl, blockGraphicData
- ld de,0
- ld e,a
- 
- add hl, de ;block graphic data ptr
- ld a, (hl)
- ld (tSpriteID),a
- inc hl ;block data + id + pal
- ld a, (hl)
- ld (tSpritePAL),a
 
- ld hl, blockData
- sla e
- sla e
- add hl,de ;points to block data
- ex de,hl
+ ld l,(ix+iDataY)
  
- jr drawAnyMino
+ ld de,0
+ ld d,(ix+iDataXH)
+ ld e,(ix+iDataXL)
+ ld h,0 ;no special settings for hold
+ ld a,(holdT)
+ jp drawMinoFromType
  
-;inputs:
-;ix = obj data ptr
-;hl = ptr to curxy etc.
-setDataFromPTR:
- ld a,(hl)
- ld (dmX),a
+drawPreview:
+ ;ix is data ptr
+ push ix
+ ld ix,rules
+ bit rbitPreviewEnabled,(ix+0)
+ pop ix ;restore data ptr
+ ret z ;preview is disabled
+ 
+ push ix
+ ld de,0
+ ld d,(ix+iDataXH)
+ ld e,(ix+iDataXL)
+ ld ix,SSS
+ add ix,de
+ res redrawObjBit,(ix+iDataType)
+ call drawObject
+ pop ix
+ 
+ ld hl,0
+ ld h,(ix+iDataPTRH)
+ ld l,(ix+iDataPTRL)
+ ld de,SSS
+ add hl,de
+ ;hl = ptr to extra coords
+ 
+ ld de,randBag
+ ld b,(ix+iDataW)
+drawAllPreviewMinos:
+ push bc
+ ld a,(de) ;get preview minotype
+ 
+ ld b,a
+ inc de
+ push de
+ 
+ ld de,0
+ ld e,(hl)
+ inc hl
+ ld d,(hl) ;de = x
  inc hl
  ld a,(hl)
- ld (dmY),a
- inc hl ;past XY
- 
- ld a,(ix+iDataXL)
- ld (dmOX),a
- ld a,(ix+iDataXH)
- ld (dmOX+1),a
- ld a,(ix+iDataY)
- ld (dmOY),a 
- 
- inc hl ;past rotation
- ld a,(hl) ;save type
- inc hl ;past type
- inc hl ;past status
- push hl ;now at block data struct
- ld de,spriteID
- add hl,de ;hl points to spriteID in block data struct
- ld a,(hl)
- ld (tSpriteID),a
  inc hl
- ld a,(hl)
- ld (tSpritePal),a
+ push hl ;save ptr to coords
  
+ or a,a
+ sbc hl,hl
+ ld l,a ;a -> l = y
+ ld h,1 << drawMinoHalf
+ ld a,b ;get preview minotype again
+ 
+ 
+ call drawMinoFromType
+ pop hl
  pop de
+ pop bc
+ djnz drawAllPreviewMinos
  ret
  
-translateVisibleY:
- ld a,(dmY)
- sub fieldHeight-20 ;offset from visible coords
- ld (dmY),a
+blockDataPTR:
+ .dl 0 
+ 
+multABy12ToBC:
+ bit 7,a
+ ld bc,0
+ jr z,noSignExtendBC
+ dec bc
+noSignExtendBC:
+ ld c,a ;x 
+ add a,a ;2*x
+ add a,c ;3*x
+ add a,a ;6*x
+ add a,a ;12*x
+ ld c,a ;12x
+ ret
+
+;input:
+;a = type
+;output:
+;a = pal
+;ix = sprdata ptr
+;h = sprdata bpp
+;(blockDataPTR)
+getMinoGraphic:
+ ld de,0
+ add a,a
+ ld e,a ;de=type*2
+ ld hl,blockGraphicData
+ add hl,de ;hl points to sprite and palette info
+ ld a,(hl) ;a=sprite id
+ inc hl ;to palette info
+ ld d,(hl) ;d=palette
+  
+ ld ix,(drefSprite)
+ ld h,(ix) ;save bpp
+ inc ix
+ call getBPPFromID
+ ;h=bpp id
+ ;c=bpp
+ 
+ ld b,18 ;sprite 1bpp size 12x12 sprite
+ mlt bc ;144 * c / 8 -> 18 * c, c in [1,2,4,8]
+ ;therefore c<256
+ ld b,a
+ mlt bc ;spritedatasize*spriteID
+ add ix,bc ;add to sprite data: ix is spdata ptr
+ 
+ ld b,h ;save bpp
+ ld a,d ;restore palette
+ ;calculate block data ptr
+ ld d,0
+ ld hl,blockData
+ add hl,de ;2
+ add hl,de ;4
+ add hl,de ;6
+ add hl,de ;8x type + blockdata
+ ld (blockDataPTR),hl
+ ld h,b
+ 
+ ;h = bpp
+ ;a = palette
+ ;ix = sprdata
+ ;(blockDataPTR)
+ ret
+ 
+;input:
+;de = x
+;l = y
+
+drawMinoBlock:
+ ld b,12
+smcDMB:
+ ld h,0
+ ld ix,0
+ ld a,0
+ ld c,0
+ call drawSpriteCustomBPP
+ ret
+smcDMB_h = smcDMB + 1
+smcDMB_ix = smcDMB + 4
+smcDMB_a = smcDMB + 8
+smcDMB_c = smcDMB + 10
+ 
+;inputs:
+;de= x
+;l = y
+;h = settings
+;a = type
+drawMinoFromType:
+ push de
+ push hl
+ call getMinoGraphic
+ ld (smcDMB_ix),ix
+ ld (smcDMB_a),a
+ ld a,h
+ pop hl
+ bit drawMinoHalf,h
+ jr z,notHalfBPP
+ set 2,a ;set "half scale" bit
+notHalfBPP:
+ ld (smcDMB_h),a
+ res 2,a
+ ld d,h ;save settings to d
+ ld h,a
+ 
+ ld c,12
+ ld b,h
+ inc b
+divideByBPPdmft:
+ rrc c
+ djnz divideByBPPdmft
+ 
+ ld a,c
+ ld (smcDMB_c),a ;pixel width
+ ld h,d ;restore setting
+ pop de
+ xor a
+ inc a
+ ld (smcDMBs_xOfs),a ;1 = grid x offset 
+ ld (smcDMBs_yOfs),a ;also 1 = y offset 
+ 
+ ;at this point, graphical data has been set
+ ;except:
+ ;h = settings
+ ;l = y
+ ;de= x
+ ;this will be modifed in loop, using blockDataPTR
+ jr drawMinoBlocksLoopBegin
+ 
+;inputs:
+;ix= obj data ptr
+;de= curdata ptr
+;h = settings
+drawMinoFromData:
+ push ix
+ ex de,hl ;hl = curdata ptr, d=settings
+ ld a,(hl) ;get x grid ofs
+ ld (smcDMBs_xOfs),a
+ inc hl
+ 
+ ld a,(hl) ;get y grid ofs
+ sub fieldHeight - 20
+ ld (smcDMBs_yOfs),a
+ inc hl ;past y
+ 
+ ;past curR,T,Status
+ inc hl
+ ld a,(hl) ;type
+ inc hl
+ inc hl
+
+ push hl ;blockDataPTR
+ push de ;d=settings
+ call getMinoGraphic
+ pop de ;d=settings
+ 
+ ld (smcDMB_ix),ix
+ ld (smcDMB_a),a
+ 
+ bit drawMinoHalf,d
+ jr z,noHalfScale
+ set 2,h
+noHalfScale:
+ ld a,h 
+ ld (smcDMB_h),a
+ 
+ res 2,a
+ ld h,a
+ 
+ ld c,12
+ ld b,h
+ inc b
+divideByBPPdmfd:
+ rrc c
+ djnz divideByBPPdmfd
+ bit drawMinoHalf,d
+ jr z,noHalfAdjust
+ rrc c
+noHalfAdjust:
+ 
+ ld a,c
+ ld (smcDMB_c),a
+ 
+ pop hl
+ ld (blockDataPTR),hl
+ 
+ ex de,hl ;settings in h
+ pop ix 
+ ld l,(ix+iDataY)
+ ld de,0
+ ld d,(ix+iDataXH)
+ ld e,(ix+iDataXL)
+ 
+ jr drawMinoBlocksLoopBegin
+ 
+drawMinoBlocksLoopBegin:
+ bit drawMinoErase,h
+ jr z,noErase
+ xor a
+ ld (smcDMB_a),a
+ ld ix,(drefSprite)
+ inc ix ;past bpp
+ ld (smcDMB_ix),ix
+noErase:
+ bit drawMinoDark,h
+ jr z,noDark
+ ld ix,smcDMB_a
+ ld a,32
+ add a,(ix)
+ ld (ix),a
+noDark:
+ 
+ ld b,4
+drawMinoBlocksLoop:
+ push bc
+ push de
+ push hl
+ 
+ ld bc,(blockDataPTR)
+ ld a,(bc)
+ inc bc
+ ld (blockDataPTR),bc
+
+smcDMBs_xOfs = $ + 1
+ add a,0
+ cp 10 ;if it goes past 10, it's out-of-field
+ jr nc, skipDMB
+ 
+ call multABy12ToBC
+ bit drawMinoHalf,h
+ jr z,noHalfDMBx
+ srl c ;half multiplied value
+noHalfDMBx:
+ ;12x -> bc (or 6x if half-scale)
+ ex de,hl ;hl=x
+ add hl,bc ;add xofs
+ ex de,hl ;hl=settings/y again de=x
+ 
+ ld bc,(blockDataPTR)
+ ld a,(bc)
+ inc bc
+ ld (blockDataPTR),bc
+
+smcDMBs_yOfs = $ + 1
+ add a,0
+ cp 20 ;if it goes past 20, it's out-of-field
+ jr nc, skipDMB
+ 
+ call multABy12ToBC
+ bit drawMinoHalf,h
+ jr z,noHalfDMBy
+ srl a ;half multiplied value
+noHalfDMBy:
+ ;12y->bc
+ add a,l ;add ofs to y ofs
+ ld l,a
+ 
+ ;de = x
+ ;l = y
+ 
+ call drawMinoBlock
+skipDMB:
+ pop hl
+ pop de
+ pop bc
+ djnz drawMinoBlocksLoop
  ret
  
 ;requires ix as obj data ptr
-;hl as setDataFromPTR ptr to curdata etc
+;de as setDataFromPTR ptr to curdata etc
 ;also, nice
 nullPTRMino:
- call setDataFromPTR
- ld a,0
- ld (tSpriteID),a
- ld (tSpritePAL),a
- 
- call translateVisibleY
- jr drawAnyMino
-
-;ix = obj data ptr
-;hl = setDataFromPTR ptr
-drawPTRMino:
- call setDataFromPTR
- call translateVisibleY
- ;jr drawAnyMino
- 
-;inputs: de=block data struct
-;ix = obj data ptr
-;dmx,dmy,dmox,dmoy
-drawAnyMino: 
- ld b,4
- ld (drawMinoTempDE),de
-drawMinoBlocks:
- push bc
- 
- ld de,(drawMinoTempDE)
- ld hl,0
- ld a,(dmX)
- ld l,a
- ld a,(de) ;x+ofsx
- add a,l
- cp (ix+iDataW)
- jr nc,skipDrawBlock
- ld l,a
- ld h,12
- mlt hl ;12x
- ld a,(dmOX+0)
- add a,l ;
- ld l,a
- ld a,(dmOX+1)
- adc a,h
- ld h,a ;hl=12x+12o+layoutofsx
- push hl ;save x
- inc de
- 
- ld hl,0
- ld a,(dmY)
- ld l,a
- ld a,(de)
- inc de
- ld (drawMinoTempDE),de
- add a,l
- pop bc ;stack dancing
- cp (ix+iDataH)
- jr nc,skipDrawBlock
- push bc ;around a skip
- ld l,a
- ld h,12
- mlt hl ;12x
- ld a,(dmOY) ;hmm
- add a,l
- ld l,a ;hl=y location
- pop de ;de=x location
- 
- push ix
- call drawOneBlockNoGrid
- pop ix
-skipDrawBlock:
- pop bc
- djnz drawMinoBlocks
+ ld h,1
+ call drawMinoFromData
  ret
-
+ 
+;ix = obj data ptr
+;de = setDataFromPTR ptr
+drawPTRMino:
+ ld h,0
+ call drawMinoFromData
+ ret
+ 
 drawTextColor:
  .db 0
 drawTextBG:
@@ -3455,7 +3815,7 @@ references:
 .dl levelInfo - itemsInfo + SSSInfo
 .dl scoreInfo - itemsInfo + SSSInfo
 .dl linesInfo - itemsInfo + SSSInfo
-.dl 0 ;planned but scrapped for performance
+.dl previewInfo - itemsInfo + SSSInfo
 .dl timerInfo - itemsInfo + SSSInfo
 
 refSize = 3
@@ -3465,7 +3825,7 @@ refHold = refSize * 1 + refOfs
 refLevel = refSize * 2 + refOfs
 refScore = refSize * 3 + refOfs
 refLines = refSize * 4 + refOfs
-;refChar = refSize * 5 + refOfs
+refPreview = refSize * 5 + refOfs
 refTimer = refSize * 6 + refOfs
 
 ;various equates for itemsInfo
@@ -3498,69 +3858,78 @@ typeList=13
 boxColor = 14
 boxColor2= 15
 textColor= 35
+infoBoxX = 168
+infoBoxY = 16
 
 itemsInfo:
-.db 9 ;number of items
+.db 10 ;number of items
 fieldInfo:
 .db typeTetris
 .dw 0 ;x
 .db 0 ;y
-.db 0 ;a (does nothing?)
+.db 12 ;a/size of tile
 .dw field - PSS ;eventually, consider making the field memory movable
 .db 10, 20 ;width, height (for display only)
 holdInfo:
 .db typeHold
 .dw 132
 .db 160
-.db 0
+.db 12 ;size of tile
 .dw 0 ;uses refSprite data ptr
 .db 4, 4 ;width, height
+previewInfo:
+.db typePreview
+.dw previewBox - SSSCopiedData
+.db 0 ;unused
+.db 0 ;unused?
+.dw previewCoords - SSSCopiedData ;SSS ptr to coords
+.db 6, 0 ;# of preview blocks, unused
 ;BACKGROUND BOX INFO
 .db typeBox
-.dw 152 ;x
-.db 16 ;y
+.dw infoBoxX ;x
+.db infoBoxY ;y
 .db boxColor ;color of main
 .dw 128 ;width
 .db boxColor2, 80 ;bordercolor, height
 ;SCORE TEXT ETC.
 .db typeMenu
-.dw 160
-.db 24
+.dw infoBoxX + 8
+.db infoBoxY + 8
 .db textColor
 .dw gameText - SSSCopiedData
 .db 7, 0 ;cursorid doesn't matter cause not a active menu
 scoreInfo:
 .db typeNumber
-.dw 208
-.db 24
+.dw infoBoxX + 8 + 48
+.db infoBoxY + 8 + 0
 .db textColor
 .dw score - PSS ;variables are saved in PSS
 .db 8, boxColor ; size of number, bgcolor
 levelInfo:
 .db typeNumber
-.dw 208
-.db 48
+.dw infoBoxX + 8 + 48
+.db infoBoxY + 8 + 24
 .db textColor
 .dw level - PSS
 .db 3, boxColor ;size number, bg color
 linesInfo:
 .db typeNumber
-.dw 208
-.db 56
+.dw infoBoxX + 8 + 48
+.db infoBoxY + 8 + 32
 .db textColor
 .dw lines - PSS
 .db 4, boxcolor ;number of digits, bgcolor
 timerInfo:
 .db typeNumber
-.dw 208
-.db 32
+.dw infoBoxX + 8 + 48
+.db infoBoxY + 8 + 8
 .db textColor
 .dw globalTimer - PSS
 .db 8, boxcolor
 highscoreInfo:
 .db typeNumber
-.dw 208
-.db 72
+.dw infoBoxX + 8 + 48
+.db infoBoxY + 8 + 48
 .db textColor
 .dw highScore - PSS
 .db 8, boxcolor
@@ -3573,6 +3942,28 @@ gameText
  .db "Lines:",0
  .db 0
  .db " Best:",0
+ 
+previewBox:
+ .db typeBox
+ .dw 126 ;x
+ .db 6 ;y
+ .db 2 ;color
+ .dw 36 ;width
+ .db 3, 144 ;border, height
+ 
+previewCoords:
+ .dw 132
+ .db 12
+ .dw 132
+ .db 36
+ .dw 132
+ .db 60
+ .dw 132
+ .db 84
+ .dw 132
+ .db 108
+ .dw 132
+ .db 132
  
 SSSInfo = itemsInfo - SSSCopiedData + SSS
 
@@ -4980,16 +5371,23 @@ numbers:
 .db $00
 fontDataEnd:
 
+;dw $00ff, $0ff0, $ff00, $f00f
 paletteData:
 .dw $7fff, $1CE7, $3def, $0000
-;dw $00ff, $0ff0, $ff00, $f00f
 .dw $7fff, $4f7d, $029d, $1d39
 .dw $7fff, $3a57, $1d39, $0000
-.dw $7fff, $7f21, $7de4, $4402
+.dw $7fff, $7f21, $7de4, $4402 ;4
 .dw $7fff, $7fff, $7fc0, $7f21
 .dw $7fff, $5b83, $12c9, $3def
 .dw $7fff, $66fc, $5134, $0000
-.dw $7fff, $7eb9, $7464, $4402
-.dw $7fff, $1CE7, $3def, $0000
+.dw $7fff, $7eb9, $7464, $4402 ;8
+.dw $3def, $0c63, $1ce7, $0000
+.dw $3def, $25ae, $014e, $0c8c
+.dw $3def, $1d2b, $0c8c, $0000
+.dw $3def, $3d80, $3ce2, $2001 ;12
+.dw $3def, $3def, $3de0, $3d80
+.dw $3def, $2dc1, $0964, $1ce7
+.dw $3def, $316e, $288a, $0000
+.dw $3def, $3d4c, $3822, $2001 ;16
 paletteDataEnd:
 SSSCopiedDataEnd:
