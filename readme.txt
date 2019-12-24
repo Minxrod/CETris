@@ -15,9 +15,6 @@ Up -hard drop (instant drop)
 XT0N - hold piece
 Del - quit
 
-Known issues:
- Can't see upcoming pieces yet
- 
 Special thanks/Credits to...
  Michael - helped troubleshoot at the hackathon this was started at
  The various people who put together ti84pce.inc
