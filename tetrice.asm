@@ -175,15 +175,6 @@ main:
  
  call defaultInfo
  
- ld a,5
- ld de,32
- ld l,48
- ld h,0
- call drawMinoFromType
- call swapVRamPTR
- ld ix, mbuttonConfirm
- call waitButton
- 
  jp mainMenu
  
 exit:
@@ -2316,7 +2307,9 @@ drawHoldX:
  cp NULL_BLOCK
  ret z ;don't draw if it's empty!
 
- ld l,(ix+iDataY)
+ ld a,12
+ add a,(ix+iDataY)
+ ld l,a ;y+12 to center in hold box
  
  ld de,0
  ld d,(ix+iDataXH)
@@ -2849,7 +2842,7 @@ drawSpriteObj:
  ld a,(ix+iDataA) 
 
  pop ix
- call drawSprite
+ call drawSpriteCustomBPP
  pop ix
  ret
  
@@ -3970,7 +3963,7 @@ SSSInfo = itemsInfo - SSSCopiedData + SSS
 menuInfo = menuObjData - SSSCopiedData
 
 menuObjData:
- .db 3
+ .db 4
  ;background
  .db typeBox
  .dw 0 ;x
@@ -3992,6 +3985,13 @@ menuObjData:
  .db textColor
  .dw cursorString - SSSCopiedData
  .db 0, 0
+ ;logo
+ .db typeSprite1bpp
+ .dw 256
+ .db 200
+ .db 1
+ .dw logoSprite - SSSCopiedData
+ .db 7, 14
  
 cursorString:
  .db "*",0
@@ -4595,6 +4595,25 @@ spriteData:
 .db $6a,$ab,$ff
 .db $3f,$ff,$fc
 .db $0f,$ff,$f0
+
+logoSprite:
+;.db sp1bpp
+;unneeded because calls to drawSpriteObj only
+;rely on the type sent during the call
+.db $3f,$df,$f8,$00,$00,$00,$00
+.db $7f,$df,$f8,$00,$00,$00,$00
+.db $ff,$df,$f8,$00,$00,$00,$00
+.db $ff,$df,$f8,$60,$00,$c0,$00
+.db $f0,$1e,$00,$60,$00,$c0,$00
+.db $f0,$1f,$e0,$60,$00,$00,$00
+.db $f0,$1f,$e3,$fc,$fe,$cf,$e0
+.db $f0,$1f,$e3,$fd,$fe,$df,$e0
+.db $f0,$1f,$e0,$61,$80,$d8,$00
+.db $f0,$1e,$00,$61,$80,$df,$c0
+.db $ff,$df,$f8,$61,$80,$cf,$e0
+.db $ff,$df,$f8,$61,$80,$c0,$60
+.db $7f,$df,$f8,$61,$80,$df,$e0
+.db $3f,$df,$f8,$61,$80,$df,$c0
 
 fontData:
 ;bits per pixel
