@@ -23,7 +23,7 @@ main:
  call loadSave ;actually read save data
  
  ;initialize various data
- call initData	;important info
+ call initData	;important info + appvar load
  call initLCD ;screen init (requires data for palette)
  
  ;key press setup
@@ -233,6 +233,10 @@ skipResetA0:
  jr backAgainGenerate
  
 incGarbage:
+ ld ix,rules
+ bit rbitGarbageRising,(ix+rfExtra)
+ ret z ;garbage isn't rising so don't do stuff
+ 
  ;increment garbage timer
  ld hl,rules+rRGT
  ld a,(garbageTimer)
@@ -3553,7 +3557,7 @@ rearchiveData:
 initData:
  call loadData
  ex de,hl ;hl = data ptr
- ld bc,0
+ ld bc,0 
  ld c,(hl) ;size of data
  inc hl
  ld b,(hl) ;size high byte
@@ -3636,6 +3640,7 @@ kicksI:
  .db  0,-1,  0,-1,  0,-1,  0, 1,  0,-2
  .db  0, 0, -1, 0,  2, 0, -1, 0,  2, 0 ;same
  
+;this has never been used properly because it wasn't worth it, but it might be used later for "accuracy purposes"
 kicksO:
  .db  0, 0
  .db  0, 1
