@@ -147,6 +147,9 @@ jptActiveMenu = menuJumpTable + 12
 jptGetStringInList = menuJumpTable + 16
 jptGetStringPTRSelection = menuJumpTable + 20
 jptSetNumber = menuJumpTable + 24
+jptDrawObject = menuJumpTable + 28 ;for custom draws
+jptCheckKey = menuJumpTable + 32 ;yes
+jptSwapVRamPTR = menuJumpTable + 36 ;okay
 
 ;key ids for important operations
 ;button repeat info etc.
@@ -225,7 +228,8 @@ typeSprite4bpp=9
 typeSprite2bpp=10
 typeSprite1bpp=11
 typeNumber8=12
-typeList=13 ;unimplemented
+typeList=13 ;unimplemented, do not use
+typeCustom=14 ;jumps to PTR provided, enables custom draw code
 
 ;data references used in main program
 ;all defined relative to SSS, so doesn't need actual data.

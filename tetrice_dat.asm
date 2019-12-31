@@ -284,7 +284,7 @@ selectModeMenu:
  .db 0 ;y
  .db 9 ;color
  .dw 160 ;width
- .db 10, 128 ;bordercolor, height
+ .db 10, 160 ;bordercolor, height
  ;menu text
  .db typeMenu
  .dw 8
@@ -562,7 +562,7 @@ controlMenuData:
  .db 8
  .db textColor
  .dw controlMenuText - SSS
- .db 2, 2
+ .db 3, 2
 ;cursor
  .db typeString
  .dw 0
@@ -588,11 +588,12 @@ keyRepeatDrop:
 controlMenuText:
  .db "MOVE REPEAT:",0
  .db "DROP REPEAT:",0
- 
+ .db "BUTTON MAPPING",0
 controlJumps:
  jp gotoOptions
  jp setButtonInfoLR
  jp setButtonInfoDrop
+ jp buttonMappingMenu
  
 setButtonInfoLR:
  ld ix, keyRepeatLR
@@ -612,6 +613,153 @@ setButtonInfoDrop:
  call jptSetNumber
 
  jp controlMenu
+ 
+buttonMappingMenu:
+ ld ix, buttonMappingData
+ jp jptActiveMenu
+ 
+buttonMappingData:
+ .db 4
+;bg box
+ .db typeBox
+ .dw 0
+ .db 0
+ .db 25
+ .dw 180
+ .db 26, 96
+;menu text
+ .db typeMenu
+ .dw 8
+ .db 8
+ .db textColor
+ .dw remapMenuText - SSS
+ .db 8, 2
+;cursor
+ .db typeString
+ .dw 0
+ .db 8
+ .db textColor
+ .dw cursorString - SSS
+ .db 0, 0
+;button info
+ .db typeCustom
+ .dw 0
+ .db 0
+ .db 0
+ .dw listButtonMaps - SSS
+ .db 0, 8
+
+buttonPrompt:
+ .db typeString
+ .dw 8
+ .db 80
+ .db textColor
+ .dw buttonPromptText - SSS
+ .db 0, 0
+buttonPromptText:
+ .db "PRESS BUTTON TO SET",0
+ 
+tempText:
+ .db typeString
+ .dw 128
+ .db 0
+ .db textColor
+ .dw 0
+ .db 0, 0
+ 
+remapMenuText:
+ .db "LEFT MOVE",0
+ .db "RIGHT MOVE",0
+ .db "SOFT DROP",0
+ .db "HARD DROP",0
+ .db "LEFT ROTATE",0
+ .db "RIGHT ROTATE",0
+ .db "HOLD",0
+ .db "PAUSE",0
+remapMenuJumps:
+ jp controlMenu
+ ld a,0
+ jr mapButton
+ ld a,4
+ jr mapButton
+ ld a,8
+ jr mapButton
+ ld a,12
+ jr mapButton
+ ld a,16
+ jr mapButton
+ ld a,20
+ jr mapButton
+ ld a,24
+ jr mapButton
+ ld a,28
+ jr mapButton
+
+mapButton:
+ push af
+ ld ix, buttonPrompt
+ res redrawObjBit,(ix+iDataType)
+ call jptDrawObject
+ call jptSwapVRamPTR
+ pop af
+ 
+ ld hl,buttonData
+ ld de,0
+ ld e,a
+ add hl,de ;ptr to actual data to replace
+ push hl
+waitNoKey:
+ call jptCheckKey
+ cp -1
+ jr nz, waitNoKey 
+waitAnyKey:
+ call jptCheckKey
+ cp -1
+ jr z, waitAnyKey
+ ;a is keyid
+ pop hl
+ ld (hl),a
+ 
+ jp buttonMappingMenu
+ 
+;this draws all of the current button mappings.
+;ix: points to temptext
+listButtonMaps:
+ ld b,8
+ ld hl,buttonData
+ ld ix,tempText
+listButtonLoop:
+ push bc
+ push hl
+ ld a,(hl) ;current buttonID
+ ld c,a
+ ld a,8
+ sub b ;8-b = y location
+ add a,a
+ add a,a
+ add a,a
+ add a,8
+ 
+ ld (ix+iDataY),a
+ ld a,c ;restore buttonID
+ 
+ ld hl,buttonText
+ call jptGetStringInList
+ ld (ix+iDataPTRH),h
+ ld (ix+iDataPTRL),l
+
+ res redrawObjBit, (ix+iDataType)
+ push ix
+ call jptDrawObject
+ pop ix
+ pop hl
+ inc hl
+ inc hl
+ inc hl
+ inc hl
+ pop bc
+ djnz listButtonLoop
+ ret
  
 ;note: cursorID does not apply
 ;if active menu is not called
@@ -662,6 +810,67 @@ gameOverData:
 gameOverText:
  .db "GAME",0
  .db "OVER",0
+ 
+buttonText:
+;g1
+ .db "GRAPH",0
+ .db "TRACE",0
+ .db "ZOOM",0
+ .db "WINDOW",0
+ .db "Y=",0
+ .db "2ND",0
+ .db "MODE",0
+ .db "DEL",0
+;g2
+ .db "none",0 ;really ON: unobtainable
+ .db "STO",0
+ .db "LN",0
+ .db "LOG",0
+ .db "X^2",0
+ .db "X^-1",0
+ .db "MATH",0
+ .db "ALPHA",0
+;g3
+ .db "0",0
+ .db "1",0
+ .db "4",0
+ .db "7",0
+ .db ",",0
+ .db "SIN",0
+ .db "APPS",0
+ .db "XT0N",0
+;g4
+ .db ".",0
+ .db "2",0
+ .db "5",0
+ .db "8",0
+ .db "(",0
+ .db "COS",0
+ .db "PRGM",0
+ .db "STAT",0
+;g5
+ .db "(-)",0
+ .db "3",0
+ .db "6",0
+ .db "9",0
+ .db "(",0
+ .db "TAN",0
+ .db "VARS",0
+ .db "none",0
+;g6
+ .db "ENTER",0
+ .db "+",0
+ .db "-",0
+ .db "*",0
+ .db "/",0
+ .db "^",0
+ .db "CLEAR",0
+ .db "none",0
+;g7
+ .db "DOWN",0
+ .db "LEFT",0
+ .db "RIGHT",0
+ .db "UP",0
 
 blockGraphicData:
  .db  0, 4

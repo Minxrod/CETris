@@ -26,7 +26,9 @@ main:
  call initData	;important info
  call initLCD ;screen init (requires data for palette)
  
- call initKeyTimer ;key press setup
+ ;key press setup
+ ;what the heck did this even do???
+ ;call initKeyTimer 
  call defaultInfo ;default game rules/information
  call initDataCustom ;appvar custom setup
  
@@ -2015,11 +2017,23 @@ drawJumps:
  ld h,sp1bpp
  jr sharedDSO
  jp draw8BitNumber
+ jp 0 ;undefined
+ jp drawCustom
  ret ;this one is just aesthetic
  
 sharedDSO:
  jp drawSpriteObj
 
+drawCustom:
+ or a,a
+ sbc hl,hl
+ ld h,(ix+iDataPTRH)
+ ld l,(ix+iDataPTRL)
+ ld de,SSS
+ add hl,de
+ 
+ jp (hl) ;the rest is up to special drawing code
+ 
 drawNullBlock:
  ld a,0
  ld (tSpriteID),a
@@ -3211,72 +3225,6 @@ keys:
 .db 0,0,0,0
 .db 0,0,0,0
 
-;will be used in button mapping
-buttonText:
-;g1
- .db "GRAPH",0
- .db "TRACE",0
- .db "ZOOM",0
- .db "WINDOW",0
- .db "Y=",0
- .db "2ND",0
- .db "MODE",0
- .db "DEL",0
-;g2
- .db "ON",0 ;unobtainable
- .db "STO",0
- .db "LN",0
- .db "LOG",0
- .db "X^2",0
- .db "X^-1",0
- .db "MATH",0
- .db "ALPHA",0
-;g3
- .db "0",0
- .db "1",0
- .db "4",0
- .db "7",0
- .db ",",0
- .db "SIN",0
- .db "APPS",0
- .db "XT0N",0
-;g4
- .db ".",0
- .db "2",0
- .db "5",0
- .db "8",0
- .db "(",0
- .db "COS",0
- .db "PRGM",0
- .db "STAT",0
-;g5
- .db "(-)",0
- .db "3",0
- .db "6",0
- .db "9",0
- .db "(",0
- .db "TAN",0
- .db "VARS",0
- .db "",0
-;g6
- .db "ENTER",0
- .db "+",0
- .db "-",0
- .db "*",0
- .db "/",0
- .db "^",0
- .db "CLEAR",0
- .db "",0
-;g7
- .db "DOWN",0
- .db "LEFT",0
- .db "RIGHT",0
- .db "UP",0
-;.db "",0 ;does not exist
-;.db "",0
-;.db "",0
-;.db "",0
-
 defaultButtonData:
 PSS1024CopiedData:
 ;buttonleft:
@@ -3318,23 +3266,7 @@ defaultButtonDataSize = defaultButtonDataEnd - defaultButtonData
 ;ix = ptr to key data to check
 checkKeyDown:
  ld a,(ix+buttonID)
- ld de,0
- ld e,a
- and $07 ; a = bit
- srl e
- srl e
- srl e  ; e = byte
- ld hl, keys
- add hl,de ;add byte ofs 
- ld b,a
- ld a,(hl) 
- inc b 
- ;b is shift count
- ;a is data to shift
-shiftKeyBit:
- rrca
- djnz shiftKeyBit
- rlca ;result: whatever stuff this does
+ call checkKeyA
  ;so carry is set or not
  push af ;save carry state
  ld a,(ix+buttonTimer)
@@ -3369,6 +3301,26 @@ resetTimer:
  ld (ix+buttonTimer),a
  ret
 
+checkKeyA:
+ ld de,0
+ ld e,a
+ and $07 ; a = bit
+ srl e
+ srl e
+ srl e  ; e = byte
+ ld hl, keys
+ add hl,de ;add byte ofs 
+ ld b,a
+ ld a,(hl) 
+ inc b 
+ ;b is shift count
+ ;a is data to shift
+shiftKeyBit:
+ rrca
+ djnz shiftKeyBit
+ rlca ;result: carry if pressed
+ ret
+ 
 ;ix points to button info
 ;wait for no press of selected button
 ;note: ix will still point to button data after
@@ -3391,15 +3343,25 @@ waitButton:
  jr nc, waitButton ;wait for selection
  ret 
 
-initKeyTimer:
+checkKey:
+ call scanKeys
+ ld a,-1
+ ld (smcLastPress),a ;if no press, default -1
  ld b,64
 rkeys:
  push bc
  ld a,b
  dec a
- call checkKeyDown
+ call checkKeyA
  pop bc
+ jr nc,noSetLastPress
+ ld a,b
+ dec a
+ ld (smcLastPress),a
+noSetLastPress:
  djnz rkeys
+smcLastPress = $+1
+ ld a,-1 ;a is key id pressed
  ret
  
 ;source: http://wikiti.brandonw.net/index.php?title=84PCE:Ports:A000
@@ -3692,7 +3654,10 @@ menuJumps:
  jp initGame				;start game
  jp exit					;exit program
  jp activeMenu				;"runs" a menu object
- jp getStringInList			;
- jp getStringPTRSelection	;
+ jp getStringInList			;gets [a] in menu/list
+ jp getStringPTRSelection	;gets selected item
  jp setNumber				;select 8bit number
+ jp drawObject				;draw given object
+ jp checkKey				;keypress to [a]
+ jp swapVRamPTR				;exactly what it says
 menuJumpsEnd:
