@@ -215,21 +215,21 @@ gotoOptions:
  jp jptActiveMenu
  
 startMenuData:
- .db 5
+ .db 6
   ;background
  .db typeBox
  .dw 0 ;x
  .db 0 ;y
  .db 2 ;color
  .dw 200 ;width
- .db 1, 40 ;bordercolor, height
+ .db 1, 48 ;bordercolor, height
  ;menu text
  .db typeMenu
  .dw 8
  .db 8
  .db textColor
  .dw startMenuText - SSS
- .db 3, 2 ;# items, cursorID within menuObjData
+ .db 4, 2 ;# items, cursorID within menuObjData
  ;cursor
  .db typeString
  .dw 0
@@ -250,21 +250,30 @@ startMenuSelectLev:
  .db 16
  .db textColor
  .dw level - PSS
- .db 3, 2 ;digits, bgcolor
+ .db 2, 2 ;digits, bgcolor
+startMenuSelectLD:
+ .db typeNumber
+ .dw 96
+ .db 24
+ .db textColor
+ .dw lockDelay - PSS
+ .db 2, 2 ;digits, bgcolor
  
 startMenuText:
  .db "Mode:",0
  .db "Level:",0
+ .db "Lock Delay:",0
  .db "BEGIN",0
 startMenuJumps:
  jp jptMainMenu ;example of prev menu jump
  jp selectMode
  jp selectLev
+ jp selectLockDelay
  jp jptInitGame ;starts game
  
 selectLev:
  ld ix, startMenuSelectLev
- ld a, 20
+ ld a, 21
  call jptSetNumber
  
  ;after setting number,
@@ -272,6 +281,16 @@ selectLev:
  ld ix, startMenuData
  jp jptActiveMenu
  
+selectLockDelay:
+ ld ix, startMenuSelectLD
+ ld a, 61
+ call jptSetNumber
+ 
+ ;after setting number,
+ ;return to main start menu.
+ ld ix, startMenuData
+ jp jptActiveMenu
+
 selectMode:
  ld ix, selectModeMenu
  jp jptActiveMenu
@@ -511,7 +530,7 @@ themeSelection:
  .db 16
  .db textColor
  .dw theme - PSS
- .db 3, 19
+ .db 3, 18
  
 optionsMenuText:
  .db "THEME:",0
@@ -555,7 +574,7 @@ controlMenuData:
  .db 0
  .db 22
  .dw 132
- .db 23, 32
+ .db 23, 40
 ;menu
  .db typeMenu
  .dw 8
@@ -588,7 +607,7 @@ keyRepeatDrop:
 controlMenuText:
  .db "MOVE REPEAT:",0
  .db "DROP REPEAT:",0
- .db "BUTTON MAPPING",0
+ .db "SET CONTROLS",0
 controlJumps:
  jp gotoOptions
  jp setButtonInfoLR
