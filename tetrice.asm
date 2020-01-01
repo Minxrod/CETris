@@ -397,17 +397,6 @@ firstHold:
  call newBlock ;geneate a new block: nothing to load
  ret
  
-dropMultiple:
- ld a,(level)
- sub 9
- ld b,a
-dropAllTimes:
- push bc
- call checkBlockDown
- pop bc
- djnz dropAllTimes
- jr dropReturn
-
 update:
  ld hl, curStatus + midOfs ;last frame status
  bit csNewBlockBit, (hl) ;request new block
@@ -428,21 +417,42 @@ update:
  
 skipEndCheck:
  
- ld hl,(timerT)
- inc hl
- ld (timerT),hl
- 
- ;calculate gravity
- ld b,l ;current time
- ld a, (level)
+ xor a
+ ld (PSS+444),a
+checkGravity:
+ ld a,(level)
+ dec a
+ cp 20
+ jr c,noLevelOverflow
+ ld a,19 ;max level speed [0-19]
+noLevelOverflow:
+ ld c,a
  add a,a
- ld l, a ;l=level
- ld a, 60
- sub l ;60 - level
- jr z, dropMultiple
- jr c, dropMultiple
- cp b
- jp c, drop
+ add a,c ;3a: ofs from speedcurve
+ ld de,0
+ ld e,a 
+ ld hl,speedCurve
+ add hl,de
+ ld hl,(hl) ;hl is the speed in 8.16 fp rows/frame
+ ex de,hl ;de is speed
+ ld hl,(timerT)
+ add hl,de
+ ld (timerT),hl
+checkGravityLoop:
+ ld hl,(timerT)
+ ld de,65536 ;threshold for one row drop
+ or a,a
+ sbc hl,de
+ jr c, noDropGravity
+ ;if carry, hl was less than 65536, so timer's not done
+ ld a,(PSS+444)
+ inc a
+ ld (PSS+444),a
+ ld (timerT),hl
+ call checkBlockDown
+ jr checkGravityLoop ;must check for more than 1 row/frame
+noDropGravity:
+;drops are done/unneeded
 
  ld ix,buttonSoft
  call checkKeyDown
@@ -3432,15 +3442,6 @@ tSpriteID:
 tSpritePAL:
  .db 0
  
-linesClear:
- .db 0
-pointsPerLine:
- .db 0,1,3,5,8,11,15,20,26,33,41,50
-pointsPerMini:
- .db 1,2
-pointsPerTLine:
- .db 4,8,12,16,24
-
 CETrisSavVar:
  .db AppVarObj, "CETrisSV", 0
  
@@ -3584,6 +3585,23 @@ initData:
  
 ;program data
 ;note: doesn't really change much
+linesClear:
+ .db 0
+pointsPerLine:
+ .db 0,1,3,5,8,11,15,20,26,33,41,50
+pointsPerMini:
+ .db 1,2
+pointsPerTLine:
+ .db 4,8,12,16,24
+
+;frames until block drops one row
+;stored 8.16 fixed point
+speedCurve:
+ .dl 1092, 1377, 1768, 2311, 3075
+ .dl 4169, 5759, 8107, 11634, 17026
+ .dl 25416, 38709, 60169, 95483, 154742
+ .dl 256187, 433425, 749597, 1325716, 2398490
+
 ;format: x ofs, y ofs, spriteID, palette
 spriteID = 8
 spritePAL= 9
