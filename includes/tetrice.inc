@@ -19,6 +19,8 @@ csLockedBit = 0    ;locked block bit
 csNewBlockBit = 1  ;prev. frame requests new block
 csClearLineBit = 2 ;if block cleared a line
 csGarbageBit = 3   ;apply garbage stored (unused)
+csRotateTBit = 4   ;T-block last move was rotate
+csWallKicked = 5   ;if last rotate was kicked
 
 holdT= PSS + 256
 ;current mino data

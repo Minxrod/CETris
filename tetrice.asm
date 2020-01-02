@@ -549,7 +549,6 @@ lockAllBlocks:
  ;call newBlock
  ld hl, curStatus
  set csNewBlockBit,(hl) ;new block should be created
- ;
  
  ret
 gameEnd:
@@ -590,14 +589,25 @@ checkLines:
  bit rbitGarbageRising, (ix+rfExtra)
  call nz,raiseGarbage
 
+ ld hl,pointsPerLine
+ ld (smcPointsPerLine),hl ;no spin=regular scoring
+ ld hl,curStatus ;last move was rotate w/T
+ scf ;set carry, in case no call checktspin
+ bit csRotateTBit,(hl)
+ call nz,checkTSpin
+ 
+ push af ;save flag from checkTSpin (or, reset)
  ld a,0
  ld (linesClear),a
- call checkLineClears
+ call checkLineClears 
+ pop af ;if it was a t spin, line clear check unneeded
+ jr nc,wasTSpin ;0 lines still scores
  
  ;add to lines cleared
  ld a,(linesClear)
  cp 0
  jp z, noLinesClear
+wasTSpin:
  
  ld ix,rules
  bit rbitCascadeGravity,(ix+rfExtra)
@@ -630,6 +640,7 @@ checkLines:
  add a,e ;e=lines cleared
  ld (linesToNextLevel),a
  
+smcPointsPerLine = $+1 
  ld hl,pointsPerLine
  add hl,de
  ld e,(hl)
@@ -665,6 +676,133 @@ checkLines:
 noLevelUp:
 noLinesClear:
 ;all of the above do not update when not cleared.
+ 
+ ret
+ 
+tSpinCheckLocation:
+ .db -1,-1
+ .db  1,-1
+ .db  1, 1
+ .db -1, 1
+ .db -1,-1
+ 
+tSpinCLCount:
+ .db 0
+ 
+;sources:
+;https://tetris.fandom.com/wiki/T-Spin
+;https://tetris.wiki/Tetris_Guideline
+;https://harddrop.com/wiki/T-Spin
+;https://harddrop.com/wiki/Talk:Tetris_Guideline
+;there are many variations to t-spin checks.
+;CETris is attempting to conform to the guideline
+;check.
+
+checkTSpin:
+ xor a
+ ld (tSpinCLCount),a
+ ld b,4
+ ld de,tSpinCheckLocation
+checkTSpinLoop:
+ push bc
+ call hlFromBlockAndPTR
+ 
+ push de
+ call checkBlock
+ cp NULL_BLOCK
+ jr z,emptyCheck
+ ld hl,tSpinCLCount ;found block
+ inc (hl)
+emptyCheck:
+ pop de
+ pop bc
+ djnz checkTSpinLoop
+ 
+ ld a,(tSpinCLCount)
+ cp 3
+ ret c 
+ ;less than 3 corner blocks: invalid T spin
+ ;note: set carry -> no t-spin
+ 
+ ;using the 5th rotation state (triple spin kick)
+ ;is always a regular T spin, never a mini
+ ld hl,curStatus
+ bit csWallKicked,(hl)
+ jr nz, regularTSpin
+ 
+ ;if one cell next to pointing side filled: mini
+ ld a,(curR)
+ add a,a
+ ld hl,tSpinCheckLocation
+ ld de,0
+ ld e,a
+ add hl,de ;points to pointing side's info
+ ex de,hl ;de points to info
+ call hlFromBlockAndPTR
+ push de
+ call checkBlock
+ pop de
+ cp NULL_BLOCK
+ jr z,isTMini ;implies one block unoccupied = mini
+ call hlFromBlockAndPTR
+ push de
+ call checkBlock
+ pop de
+ cp NULL_BLOCK
+ jr z,isTMini ;implies one block unoccupied = mini
+ 
+ ;if hole behind t point: mini
+ ;ld de,curBlock+4
+ ;ld a,(de)
+ ;neg ;negate point location
+ ;ld c,a
+ ;ld a,(curX)
+ ;add a,c ;x location
+ ;ld h,a
+ ;inc de
+ 
+ ;ld a,(de)
+ ;neg ;negate point location
+ ;ld c,a
+ ;ld a,(curY)
+ ;add a,c ;x location
+ ;ld h,a
+ ;inc de
+ ;call checkBlock
+ ;cp NULL_BLOCK
+ ;jr z,isTMini ;hole behind t-point
+ 
+ ;if TST kick: standard
+regularTSpin:
+ ld hl,pointsPerTLine
+ ld (smcPointsPerLine),hl
+ or a,a ;clear carry
+ ret
+
+;t-spin mini lol
+isTMini:
+ ld hl,pointsPerTMini
+ ld (smcPointsPerLine),hl
+ or a,a ;clear carry
+ ret
+ 
+;input:
+;de=ptr to ofs
+;output:
+;h=x+ofs
+;l=y+ofs
+hlFromBlockAndPTR:
+ ex de,hl ;hl is ptr, de is output
+ ld a,(curX) ;x location
+ add a,(hl) ;add check ofs
+ ld d,a
+ inc hl
+ 
+ ld a,(curY) ;x location
+ add a,(hl) ;add check ofs
+ ld e,a
+ inc hl
+ ex de,hl
  ret
  
 clearLine:
@@ -877,6 +1015,9 @@ checkBlocksInLeft:
  dec a
  ld (curX),a
  
+ ld hl,curStatus ;last move wasn't rotate
+ res csRotateTBit,(hl)
+ 
  ;check if block needs lock
 blockTooFarLeft:
  ld a, LOCK_DISABLE
@@ -929,7 +1070,7 @@ checkBlocksRotateLeft:
  ld a,(rY)
  add a,e
  cp fieldHeight
- jr nc, noRotationLeft
+ jp nc, noRotationLeft
  ld e,a
  
  ;get x
@@ -981,6 +1122,22 @@ rotateBlocksLeft:
  ld (curX),a
  ld a,(rY) ;save the location of the successful turn.
  ld (curY),a
+ 
+ ;check t-spin
+ push hl
+ ld hl,curStatus
+ ld a,(curT)
+ cp 5
+ jr nz, noTRotateLeft
+ set csRotateTBit,(hl)
+noTRotateLeft:
+ res csWallKicked,(hl)
+ ld a,(rAttempt)
+ cp 4
+ jr z,notWallKickedL
+ set csWallKicked,(hl)
+notWallKickedL:
+ pop hl
  
  ld a, LOCK_DISABLE
  ld (lockTimer),a
@@ -1096,7 +1253,7 @@ checkBlocksRotateRight:
  ld a,(rY) 
  add a,e ;rY-oldX = new y location
  cp fieldHeight
- jr nc, noRotationRight ;out of bounds
+ jp nc, noRotationRight ;out of bounds
  ld e,a ;e=new y
  ;get x
  inc hl ;now (hl)=oldY
@@ -1148,6 +1305,21 @@ rotateBlocksRight:
  ld a,(rY) ;save the location of the successful turn.
  ld (curY),a
  
+ push hl
+ ld hl,curStatus 
+ ld a,(curT)
+ cp 5
+ jr nz, noTRotateRight
+ set csRotateTBit,(hl)
+noTRotateRight:
+ res csWallKicked,(hl)
+ ld a,(rAttempt)
+ cp 4
+ jr z,notWallKickedR
+ set csWallKicked,(hl)
+notWallKickedR:
+ pop hl
+
  ld a, LOCK_DISABLE
  ld (lockTimer),a
  call checkBlockDownOK
@@ -1214,6 +1386,9 @@ checkBlocksInRight:
  inc a
  ld (curX),a
  
+ ld hl,curStatus ;last move wasn't rotate
+ res csRotateTBit,(hl)
+ 
  ;check if still needs lock timer
 blockTooFarRight:
  ld a, LOCK_DISABLE
@@ -1228,7 +1403,11 @@ checkBlockDown:
  cp 0
  ret z ;check block down failed: no decrement
  call lowerBlock
+ ld hl,curStatus ;last move wasn't rotate
+ res csRotateTBit,(hl)
+ 
  call checkBlockDownOK ;check if it can lower again for the purpose of lock timing.
+ 
  ret
 
 ;checks if the block CAN move down without actually moving it
@@ -3588,11 +3767,13 @@ initData:
 linesClear:
  .db 0
 pointsPerLine:
- .db 0,1,3,5,8,11,15,20,26,33,41,50
-pointsPerMini:
+ .db 0,1,03,05,08,12,16,20,24,28,32,36,40
+pointsPerTMini:
  .db 1,2
 pointsPerTLine:
- .db 4,8,12,16,24
+ .db 4,8,12,16,20,25,30,35,40,45,50,55,60
+ 
+ ;24+ is impossible... jk, cascade mode
 
 ;frames until block drops one row
 ;stored 8.16 fixed point
