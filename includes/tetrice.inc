@@ -60,6 +60,11 @@ globalTimer = PSS + 348
 highscore = PSS + 352
 garbageTimer = PSS + 356
 queuedGarbage = PSS + 360
+linesClear = PSS + 364
+lineClearInfo = PSS + 365
+lcBackToBack = 0
+lcPreviousB2B = 1
+lcTSpin = 2 ;set even if no lines clear
 
 ;not the best location
 ;but I don't really know where to put this stuff

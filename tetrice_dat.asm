@@ -9,7 +9,7 @@ dataReferences:
 .dl spriteData ;std sprites like blocks, field, etc
 .dl fontData ;font data. 
 .dl blockGraphicData ;block sprite+palette pairs
-.dl bgData ;background data
+.dl 0 ;what will this be?
 .dl paletteData ;palette data
 .dl menuObjData ;menu data
 .dl pauseData
@@ -326,8 +326,8 @@ modeText:
 .db "RETRO-150",0
 .db "RETRO-200",0
 .db "RETRO-ENDLESS",0
-.db "LINE RACE-20",0
-.db "LINE RACE-40",0
+.db "SPRINT-20",0
+.db "SPRINT-40",0
 .db "DIG-5",0
 .db "DIG-10",0
 .db "DIG-15",0

@@ -26,9 +26,6 @@ main:
  call initData	;important info + appvar load
  call initLCD ;screen init (requires data for palette)
  
- ;key press setup
- ;what the heck did this even do???
- ;call initKeyTimer 
  call defaultInfo ;default game rules/information
  call initDataCustom ;appvar custom setup
  
@@ -97,7 +94,8 @@ initGame:
  
  ld a,0
  ld (lines),a
-
+ ld (linesToNextLevel),a
+ 
  ld hl,0
  ld (score),hl ;don't keep old score/time!
  ld (globaltimer),hl
@@ -595,32 +593,22 @@ checkLines:
  scf ;set carry, in case no call checktspin
  bit csRotateTBit,(hl)
  call nz,checkTSpin
- 
- push af ;save flag from checkTSpin (or, reset)
+
  ld a,0
  ld (linesClear),a
- call checkLineClears 
- pop af ;if it was a t spin, line clear check unneeded
- jr nc,wasTSpin ;0 lines still scores
+ call checkLineClears
+
+ call updateB2B
  
- ;add to lines cleared
  ld a,(linesClear)
- cp 0
- jp z, noLinesClear
-wasTSpin:
+ or a,a
+ jr z, noLinesSpin ;is line clear update needed?
  
- ld ix,rules
- bit rbitCascadeGravity,(ix+rfExtra)
- call nz,cascadeBlocks
- 
- ;must redraw field, update scores, etc.
+ ;if yes, must redraw field, update scores, etc.
  ld ix, (refField)
  res redrawObjBit, (ix+iDataType)
  
  ld ix, (refLevel)
- res redrawObjBit, (ix+iDataType)
- 
- ld ix, (refScore)
  res redrawObjBit, (ix+iDataType)
  
  ld ix, (refLines)
@@ -628,6 +616,14 @@ wasTSpin:
  
  ld hl, curStatus
  set csClearLineBit, (hl) ;clear bit 
+
+noLinesSpin: ;needs to update score for spins etc.
+ ld ix, (refScore)
+ res redrawObjBit, (ix+iDataType)
+ 
+ ld ix,rules
+ bit rbitCascadeGravity,(ix+rfExtra)
+ call nz,cascadeBlocks
  
  ld a,(linesClear)
  ld de,0
@@ -659,7 +655,17 @@ smcPointsPerLine = $+1
  add hl,hl ;20
  add hl,hl ;40
  add hl,de ;50
+ push hl
+ pop de ;50*score=de
  add hl,hl ;100*score
+ 
+ ld a,(lineClearInfo)
+ bit lcBackToBack,a
+ jr z,noB2BBonus
+ bit lcPreviousB2B,a ;only works if "back to back"
+ jr z,noB2BBonus
+ add hl,de ;150*score (back2back bonus)
+noB2BBonus:
  
  ld de,(score)
  add hl,de ;score+=100a
@@ -676,8 +682,38 @@ smcPointsPerLine = $+1
 noLevelUp:
 noLinesClear:
 ;all of the above do not update when not cleared.
- 
  ret
+ 
+updateB2B:
+ ld hl,lineClearInfo
+ ld a,(linesClear)
+
+ ;save previous state
+ res lcPreviousB2B,(hl)
+ bit lcBackToBack,(hl)
+ jr z,noPrevB2B
+ set lcPreviousB2B,(hl)
+noPrevB2B:
+
+ ;check for potential back-to-back status on this line clear
+ bit lcTSpin,(hl)
+ jr nz,checkTetrisB2B ;no t spin = check lines amt
+ ld a,(linesClear)
+ or a,a
+ jr z,B2BDone ;unaffected by no line-t spin
+ set lcBackToBack,(hl)
+ jr B2BDone ;set from T spin and line clear
+
+checkTetrisB2B:
+ res lcBackToBack,(hl) ;default unset
+ ld a,(linesClear)
+ cp 4
+ jr c,B2BDone ;jump if not tetris
+ set lcBackToBack,(hl) ;set if tetris or better
+B2BDone:
+ ;b2b set if tetris or tspin, reset otherwise
+ ret
+ 
  
 tSpinCheckLocation:
  .db -1,-1
@@ -699,6 +735,9 @@ tSpinCLCount:
 ;check.
 
 checkTSpin:
+ ld hl,lineClearInfo
+ res lcTSpin,(hl)
+
  xor a
  ld (tSpinCLCount),a
  ld b,4
@@ -723,6 +762,8 @@ emptyCheck:
  ret c 
  ;less than 3 corner blocks: invalid T spin
  ;note: set carry -> no t-spin
+ ld hl,lineClearInfo
+ set lcTSpin,(hl)
  
  ;using the 5th rotation state (triple spin kick)
  ;is always a regular T spin, never a mini
@@ -750,27 +791,6 @@ emptyCheck:
  pop de
  cp NULL_BLOCK
  jr z,isTMini ;implies one block unoccupied = mini
- 
- ;if hole behind t point: mini
- ;ld de,curBlock+4
- ;ld a,(de)
- ;neg ;negate point location
- ;ld c,a
- ;ld a,(curX)
- ;add a,c ;x location
- ;ld h,a
- ;inc de
- 
- ;ld a,(de)
- ;neg ;negate point location
- ;ld c,a
- ;ld a,(curY)
- ;add a,c ;x location
- ;ld h,a
- ;inc de
- ;call checkBlock
- ;cp NULL_BLOCK
- ;jr z,isTMini ;hole behind t-point
  
  ;if TST kick: standard
 regularTSpin:
@@ -3764,15 +3784,12 @@ initData:
  
 ;program data
 ;note: doesn't really change much
-linesClear:
- .db 0
 pointsPerLine:
  .db 0,1,03,05,08,12,16,20,24,28,32,36,40
 pointsPerTMini:
  .db 1,2
 pointsPerTLine:
  .db 4,8,12,16,20,25,30,35,40,45,50,55,60
- 
  ;24+ is impossible... jk, cascade mode
 
 ;frames until block drops one row
