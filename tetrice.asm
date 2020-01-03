@@ -590,7 +590,6 @@ checkLines:
  ld hl,pointsPerLine
  ld (smcPointsPerLine),hl ;no spin=regular scoring
  ld hl,curStatus ;last move was rotate w/T
- scf ;set carry, in case no call checktspin
  bit csRotateTBit,(hl)
  call nz,checkTSpin
 
@@ -668,7 +667,7 @@ smcPointsPerLine = $+1
 noB2BBonus:
  
  ld de,(score)
- add hl,de ;score+=100a
+ add hl,de ;score+=100a (or 150a)
  ld (score),hl
  
  ;increment level for every 10 lines cleared
@@ -686,31 +685,34 @@ noLinesClear:
  
 updateB2B:
  ld hl,lineClearInfo
- ld a,(linesClear)
 
- ;save previous state
- res lcPreviousB2B,(hl)
+ ;keep set until explicitly reset
  bit lcBackToBack,(hl)
  jr z,noPrevB2B
  set lcPreviousB2B,(hl)
+ res lcBackToBack,(hl) ;make sure this frame is checked
 noPrevB2B:
+
+ ld a,(linesClear)
+ or a,a
+ jr z,B2BDone ;unaffected by no lines cleared
 
  ;check for potential back-to-back status on this line clear
  bit lcTSpin,(hl)
- jr nz,checkTetrisB2B ;no t spin = check lines amt
- ld a,(linesClear)
- or a,a
- jr z,B2BDone ;unaffected by no line-t spin
+ jr z,checkTetrisB2B ;no t spin = check lines amt
+ 
  set lcBackToBack,(hl)
  jr B2BDone ;set from T spin and line clear
 
 checkTetrisB2B:
- res lcBackToBack,(hl) ;default unset
+ set lcBackToBack,(hl) ;set if tetris or better
  ld a,(linesClear)
  cp 4
- jr c,B2BDone ;jump if not tetris
- set lcBackToBack,(hl) ;set if tetris or better
+ jr nc,B2BDone ;reset combo if not tetris
+ res lcBackToBack,(hl) ;default unset
+ res lcPreviousB2B,(hl) ;needs 2 
 B2BDone:
+ res lcTSpin,(hl) ;don't keep next for next block
  ;b2b set if tetris or tspin, reset otherwise
  ret
  
