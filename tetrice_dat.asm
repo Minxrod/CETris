@@ -426,16 +426,7 @@ slToMenu:
  
  ld ix, rules
  ld a,(menuSelection)
- ld (ix+rMode),a
- ld ix,(saveDataPTR)
- ld de,0
- add a,a
- add a,a
- ld e,a
- add ix,de ;add 4
- add ix,de ;add 8
- ld hl,(ix+savHighScore) ;hl=score from save
- ld (highscore),hl
+ ld (ix+rMode),a ;set mode
  
  ld ix, startMenuData 
  jp jptActiveMenu

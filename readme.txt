@@ -7,7 +7,7 @@ Left/Right: Select number (must select with 2nd/Confirm first)
 Up/Down: Change item selected
 Del: quit (works anywhere)
 
-Controls:
+Default Controls:
 2nd/Alpha - rotate left/right
 Left/Right - move
 Down - soft drop
@@ -15,6 +15,9 @@ Up - hard drop (instant drop)
 XT0N - hold piece
 Mode - pause
 Del - quit
+
+Known Issues:
+ Holding and hard dropping on the same/close(?) frame causes an instant game over.
 
 Special thanks/Credits to...
  Michael - helped troubleshoot at the hackathon this was started at

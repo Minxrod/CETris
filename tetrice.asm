@@ -75,6 +75,7 @@ defaultInfo:
  ld (ix+rfWin), rLines
  
  xor a
+ ld (ix+rMode),a
  ld (ix+rRGT),a
  ld (ix+rRGD),a
  ld (ix+rLCW),150
@@ -83,6 +84,20 @@ defaultInfo:
  ld (level),a ;starting level is by default one
  ret 
 
+;must have rules+rMode already set
+setHighScore:
+ ld a,(rules+rMode)
+ ld ix,(saveDataPTR)
+ ld de,0
+ add a,a
+ add a,a
+ ld e,a
+ add ix,de ;add 4
+ add ix,de ;add 8
+ ld hl,(ix+savHighScore) ;hl=score from save
+ ld (highscore),hl
+ ret
+ 
 mainMenu:
  ld ix,(drefMenu)
  jp activeMenu
@@ -99,6 +114,7 @@ initGame:
  ld hl,0
  ld (score),hl ;don't keep old score/time!
  ld (globaltimer),hl
+ call setHighScore
  
  ld a,NULL_BLOCK
  ld (holdT),a
@@ -137,7 +153,7 @@ game:
  inc hl
  ld (globalTimer),hl
  
- ld hl, (refTimer)
+ ld hl, (refTimer) ;time updates every frame
  res redrawObjBit, (hl)
  
  ld ix,rules
@@ -367,6 +383,10 @@ hold:
  bit rbitHoldEnabled,(ix+0)
  ret z ;hold is disabled
 
+ ld hl, curStatus
+ bit csUsedHold,(hl)
+ ret nz ;hold already used once
+ 
  ;tell draw system to redraw HOLD
  ld ix,(refHold)
  res redrawObjBit, (ix+iDataType)
@@ -387,18 +407,27 @@ hold:
  
  ld a,(curT)
  call determinedBlock
+ ld hl,curStatus
+ set csUsedHold,(hl)
  ret
 firstHold:
  ld a,(curT)
  ld (holdT),a
  
  call newBlock ;geneate a new block: nothing to load
+ ld hl,curStatus
+ set csUsedHold,(hl)
  ret
  
 update:
  ld hl, curStatus + midOfs ;last frame status
  bit csNewBlockBit, (hl) ;request new block
- call nz, newBlock ;if set, create block
+ jr z,noNewBlock
+ call newBlock ;if set, create block
+ ;also requires update hold, if held needs to change
+ ld ix,(refHold)
+ res redrawObjBit, (ix+iDataType)
+noNewBlock:
  
  ld hl, rules+rfWin
  bit rbitLinesClear, (hl)
@@ -616,13 +645,13 @@ checkLines:
  ld hl, curStatus
  set csClearLineBit, (hl) ;clear bit 
 
-noLinesSpin: ;needs to update score for spins etc.
- ld ix, (refScore)
- res redrawObjBit, (ix+iDataType)
- 
  ld ix,rules
  bit rbitCascadeGravity,(ix+rfExtra)
  call nz,cascadeBlocks
+ 
+noLinesSpin: ;needs to update score for spins etc.
+ ld ix, (refScore)
+ res redrawObjBit, (ix+iDataType)
  
  ld a,(linesClear)
  ld de,0
@@ -936,7 +965,7 @@ newBlock:
  ld (curY),a
  xor a
  ld (curR),a
- ld (curStatus),a
+ ld (curStatus),a ;important: reset all status bits
  ld (timerT),a
 
  ld a,LOCK_DISABLE
@@ -1471,6 +1500,10 @@ blockTooFarDown:
  cp LOCK_DISABLE
  jr nz,noLockRefresh
  ld a,(lockDelay)
+ or a,a
+ jr nz,nonzeroDelay
+ inc a ;lock delay 0 is really infinite w/o this :P
+nonzeroDelay:
  ld (lockTimer),a
 noLockRefresh:
  ld a,0
@@ -2408,12 +2441,18 @@ drawHoldX:
 
  ld a,12
  add a,(ix+iDataY)
- ld l,a ;y+12 to center in hold box
  
+ ld hl,curStatus
+ bit csUsedHold,(hl)
+ ld l,a ;y+12 to center in hold box
  ld de,0
  ld d,(ix+iDataXH)
  ld e,(ix+iDataXL)
  ld h,0 ;no special settings for hold
+ jr z,holdUnused
+ ld h, 1<<drawMinoDark
+holdUnused:
+ 
  ld a,(holdT)
  jp drawMinoFromType
  

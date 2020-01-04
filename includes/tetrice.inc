@@ -21,6 +21,7 @@ csClearLineBit = 2 ;if block cleared a line
 csGarbageBit = 3   ;apply garbage stored (unused)
 csRotateTBit = 4   ;T-block last move was rotate
 csWallKicked = 5   ;if last rotate was kicked
+csUsedHold = 6     ;hold was used once already
 
 holdT= PSS + 256
 ;current mino data
