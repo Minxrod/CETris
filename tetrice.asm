@@ -70,9 +70,10 @@ preserveSP:
 
 defaultInfo:
  ld ix,rules
- ld (ix+rfBasic), rMarathon
+ ld (ix+rfBasic), rMarathon ;game/component rules
  ld (ix+rfExtra), rNull ;no extra rules
- ld (ix+rfWin), rLines
+ ld (ix+rfWin), rLines ;win method
+ ld (ix+rfScore),rScore ;scoring method
  
  xor a
  ld (ix+rMode),a
@@ -3752,7 +3753,7 @@ loadSave:
 ;assumes loaded and already in RAM
 saveSave:
  ld ix,(saveDataPTR) ;ix is ptr to save data
- ld hl, buttonData 
+ ld hl, buttonData
  lea de, ix+savKeys ;get hl as savedata+keys
  ld bc, defaultButtonDataSize
  ldir ;copy from ave
