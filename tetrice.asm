@@ -1500,9 +1500,9 @@ blockTooFarDown:
  cp LOCK_DISABLE
  jr nz,noLockRefresh
  ld a,(lockDelay)
- or a,a
- jr nz,nonzeroDelay
- inc a ;lock delay 0 is really infinite w/o this :P
+ cp 2
+ jr nc,nonzeroDelay
+ ld a,2 ;lock delay 0 and 1 are infinite, cool
 nonzeroDelay:
  ld (lockTimer),a
 noLockRefresh:
