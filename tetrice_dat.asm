@@ -50,74 +50,73 @@ infoBoxY = 16
 itemsInfo:
 .db 10 ;number of items
 fieldInfo:
-.db typeTetris
+.db typeMap
 .dw 0 ;x
 .db 0 ;y
 .db 12 ;a/size of tile
-.dw field - PSS ;eventually, consider making the field memory movable
-.db 10, 20 ;width, height (for display only)
+.dl (fieldHeight - fieldDrawHeight) * fieldDrawWidth + field ;eventually, consider making the field memory movable
+.db fieldDrawWidth, fieldDrawHeight ;10, 20 default
 holdInfo:
 .db typeHold
 .dw 132
 .db 160
 .db 12 ;size of tile
-.dw 0 ;uses refSprite data ptr
+.dl 0 ;uses refSprite data ptr
 .db 4, 4 ;width, height
 previewInfo:
 .db typePreview
-.dw previewBox - SSS
-.db 0 ;unused
+.dl previewBox ;note: eats up 3 bytes
 .db 0 ;unused?
-.dw previewCoords - SSS;SSS ptr to coords
+.dl previewCoords 
 .db 6, 0 ;# of preview blocks, unused
 ;BACKGROUND BOX INFO
 .db typeBox
 .dw infoBoxX ;x
 .db infoBoxY ;y
 .db boxColor ;color of main
-.dw 128 ;width
+.dl 128 ;width
 .db boxColor2, 80 ;bordercolor, height
 ;SCORE TEXT ETC.
 .db typeMenu
 .dw infoBoxX + 8
 .db infoBoxY + 8
 .db textColor
-.dw gameText - SSS
+.dl gameText
 .db 7, 0 ;cursorid doesn't matter cause not a active menu
 scoreInfo:
 .db typeNumber
 .dw infoBoxX + 8 + 48
 .db infoBoxY + 8 + 0
 .db textColor
-.dw score - PSS ;variables are saved in PSS
+.dl score ;variables are saved in PSS
 .db 8, boxColor ; size of number, bgcolor
 levelInfo:
 .db typeNumber
 .dw infoBoxX + 8 + 48
 .db infoBoxY + 8 + 24
 .db textColor
-.dw level - PSS
+.dl level
 .db 3, boxColor ;size number, bg color
 linesInfo:
 .db typeNumber
 .dw infoBoxX + 8 + 48
 .db infoBoxY + 8 + 32
 .db textColor
-.dw lines - PSS
+.dl lines
 .db 4, boxcolor ;number of digits, bgcolor
 timerInfo:
 .db typeNumber
 .dw infoBoxX + 8 + 48
 .db infoBoxY + 8 + 8
 .db textColor
-.dw globalTimer - PSS
+.dl globalTimer
 .db 8, boxcolor
 highscoreInfo:
 .db typeNumber
 .dw infoBoxX + 8 + 48
 .db infoBoxY + 8 + 48
 .db textColor
-.dw highScore - PSS
+.dl highScore
 .db 8, boxcolor
 
 gameText
@@ -134,7 +133,7 @@ previewBox:
  .dw 126 ;x
  .db 6 ;y
  .db 2 ;color
- .dw 36 ;width
+ .dl 36 ;width
  .db 3, 144 ;border, height
  
 previewCoords:
@@ -160,30 +159,47 @@ menuObjData:
  .dw 0 ;x
  .db 0 ;y
  .db 5 ;color
- .dw 72 ;width
+ .dl 72 ;width
  .db 6, 40 ;bordercolor, height
  ;menu text
  .db typeMenu
  .dw 8
  .db 8
  .db textColor
- .dw menuText - SSS
+ .dl menuText
  .db 3, 2 ;# items, cursorID within menuObjData
  ;cursor
  .db typeString
  .dw 0
  .db 8
  .db textColor
- .dw cursorString - SSS
+ .dl cursorString
  .db 0, 0
  ;logo
  .db typeSprite1bpp
  .dw 256
  .db 200
  .db 1
- .dw logoSprite - SSS
+ .dl logoSprite 
  .db 7, 14
+ ;test
+ ;.db typeSprite2bpp
+ ;.dw 100
+ ;.db 100
+ ;.db 0
+ ;.dl test
+ ;.db 4, 16
  
+;test: ;2bpp, 16x16 if you were wondering
+;.db $15, $55, $61, $54, $40, $00, $24, $02
+;.db $40, $00, $24, $02, $40, $00, $24, $02
+;.db $40, $00, $26, $02, $40, $00, $22, $a8
+;.db $40, $00, $25, $56, $40, $00, $24, $02
+;.db $40, $00, $24, $02, $40, $00, $24, $02
+;.db $a0, $00, $90, $02, $5a, $00, $90, $02
+;.db $45, $aa, $40, $02, $40, $56, $40, $02
+;.db $40, $02, $40, $0a, $2a, $a8, $6a, $a8
+
 cursorString:
  .db "*",0
  
@@ -221,42 +237,42 @@ startMenuData:
  .dw 0 ;x
  .db 0 ;y
  .db 2 ;color
- .dw 200 ;width
+ .dl 200 ;width
  .db 1, 48 ;bordercolor, height
  ;menu text
  .db typeMenu
  .dw 8
  .db 8
  .db textColor
- .dw startMenuText - SSS
+ .dl startMenuText
  .db 4, 2 ;# items, cursorID within menuObjData
  ;cursor
  .db typeString
  .dw 0
  .db 8
  .db textColor
- .dw cursorString - SSS
+ .dl cursorString
  .db 0, 0
 startMenuSelectMode:
  .db typeString
  .dw 48
  .db 8
  .db textColor
- .dw modeText - SSS
+ .dl modeText
  .db 0, 2 ;bg color
 startMenuSelectLev:
  .db typeNumber
  .dw 56
  .db 16
  .db textColor
- .dw level - PSS
+ .dl level
  .db 2, 2 ;digits, bgcolor
 startMenuSelectLD:
  .db typeNumber
  .dw 96
  .db 24
  .db textColor
- .dw lockDelay - PSS
+ .dl lockDelay
  .db 2, 2 ;digits, bgcolor
  
 startMenuText:
@@ -302,21 +318,21 @@ selectModeMenu:
  .dw 0 ;x
  .db 0 ;y
  .db 9 ;color
- .dw 160 ;width
+ .dl 160 ;width
  .db 10, 160 ;bordercolor, height
  ;menu text
  .db typeMenu
  .dw 8
  .db 8
  .db textColor
- .dw modeText - SSS
+ .dl modeText
  .db 18, 2 ;# items, cursorID within menuObjData
  ;cursor
  .db typeString
  .dw 0
  .db 8
  .db textColor
- .dw cursorString - SSS
+ .dl cursorString
  .db 0, 0
 
 modeText:
@@ -491,28 +507,28 @@ optionsMenuData:
  .dw 0 ;x
  .db 0 ;y
  .db 18 ;color
- .dw 80 ;width
+ .dl 80 ;width
  .db 19, 40 ;bordercolor, height
 ;heading
  .db typeString
  .dw 0
  .db 8
  .db textColor
- .dw optionsText - SSS
+ .dl optionsText
  .db 0, 0
 ;menu
  .db typeMenu
  .dw 8
  .db 16
  .db textColor
- .dw optionsMenuText - SSS
+ .dl optionsMenuText
  .db 2, 3
 ;curosr
  .db typeString
  .dw 0
  .db 16
  .db textColor
- .dw cursorString - SSS
+ .dl cursorString
  .db 0, 0
 ;theme
 themeSelection:
@@ -520,7 +536,7 @@ themeSelection:
  .dw 56
  .db 16
  .db textColor
- .dw theme - PSS
+ .dl theme
  .db 3, 18
  
 optionsMenuText:
@@ -564,35 +580,35 @@ controlMenuData:
  .dw 0
  .db 0
  .db 22
- .dw 132
+ .dl 132
  .db 23, 40
 ;menu
  .db typeMenu
  .dw 8
  .db 8
  .db textColor
- .dw controlMenuText - SSS
+ .dl controlMenuText
  .db 3, 2
 ;cursor
  .db typeString
  .dw 0
  .db 8
  .db textColor
- .dw cursorString - SSS
+ .dl cursorString 
  .db 0, 0
 keyRepeatLR:
  .db typeNumber8
  .dw 104
  .db 8
  .db textColor
- .dw buttonLeft + buttonTimeRepeat - PSS
+ .dl buttonLeft + buttonTimeRepeat
  .db 3, 22 ;digits, bgcolor
 keyRepeatDrop:
  .db typeNumber8
  .dw 104
  .db 16
  .db textColor
- .dw buttonSoft + buttonTimeRepeat - PSS
+ .dl buttonSoft + buttonTimeRepeat
  .db 3, 22 ;digits, bgcolor
  
 controlMenuText:
@@ -635,28 +651,28 @@ buttonMappingData:
  .dw 0
  .db 0
  .db 25
- .dw 180
+ .dl 180
  .db 26, 96
 ;menu text
  .db typeMenu
  .dw 8
  .db 8
  .db textColor
- .dw remapMenuText - SSS
+ .dl remapMenuText
  .db 8, 2
 ;cursor
  .db typeString
  .dw 0
  .db 8
  .db textColor
- .dw cursorString - SSS
+ .dl cursorString 
  .db 0, 0
 ;button info
  .db typeCustom
  .dw 0
  .db 0
  .db 0
- .dw listButtonMaps - SSS
+ .dl listButtonMaps
  .db 0, 8
 
 buttonPrompt:
@@ -664,7 +680,7 @@ buttonPrompt:
  .dw 8
  .db 80
  .db textColor
- .dw buttonPromptText - SSS
+ .dl buttonPromptText 
  .db 0, 0
 buttonPromptText:
  .db "PRESS BUTTON TO SET",0
@@ -674,7 +690,7 @@ tempText:
  .dw 128
  .db 0
  .db textColor
- .dw 0
+ .dl 0
  .db 0, 0
  
 remapMenuText:
@@ -784,14 +800,14 @@ pauseData:
  .dw 32
  .db 108
  .db boxColor
- .dw 56
+ .dl 56
  .db boxColor2, 24
 ;menu text
  .db typeMenu
  .dw 36
  .db 112
  .db textColor
- .dw pauseText - SSS
+ .dl pauseText
  .db 2, 2
 ;numbers etc
  
@@ -806,14 +822,14 @@ gameOverData:
  .dw 32
  .db 108
  .db boxColor
- .dw 56
+ .dl 56
  .db boxColor2, 24
 ;menu text
  .db typeMenu
  .dw 44
  .db 112
  .db textColor
- .dw gameOverText - SSS
+ .dl gameOverText
  .db 2, 2
 ;numbers etc
  
@@ -891,6 +907,7 @@ blockGraphicData:
  .db  0, 24
  .db  0, 28
  .db  0, 31
+ .db  0, 0
  
 spriteData:
 .db sp2bpp
@@ -1744,8 +1761,9 @@ numbers:
 .db $00
 fontDataEnd:
 
-;dw $00ff, $0ff0, $ff00, $f00f
+
 paletteData:
+;.dw $00ff, $0ff0, $ff00, $f00f
 .dw $7fff, $1CE7, $3def, $0000
 .dw $7fff, $4f7d, $029d, $1d39
 .dw $7fff, $3a57, $1d39, $0000

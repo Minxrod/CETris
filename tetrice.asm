@@ -2249,7 +2249,7 @@ drawObjectJump:
 ;jump table for various object types
 ;all should accept ix as a pointer to data
 drawJumps:
- jp drawField ;includes current mino
+ jp drawField 
  jp drawText
  jp draw24BitNumber
  jp drawSpriteObject
@@ -2268,18 +2268,14 @@ drawJumps:
  jp draw8BitNumber
  jp 0 ;undefined
  jp drawCustom
+ jp drawMap
  ret ;this one is just aesthetic
  
 sharedDSO:
  jp drawSpriteObj
 
 drawCustom:
- or a,a
- sbc hl,hl
- ld h,(ix+iDataPTRH)
- ld l,(ix+iDataPTRL)
- ld de,SSS
- add hl,de
+ ld hl,(ix+iDataPTR)
  
  jp (hl) ;the rest is up to special drawing code
  
@@ -2466,20 +2462,16 @@ drawPreview:
  ret z ;preview is disabled
  
  push ix
- ld de,0
- ld d,(ix+iDataXH)
- ld e,(ix+iDataXL)
- ld ix,SSS
- add ix,de
+ ld ix,(ix+iDataXL)
+ ;ld d,(ix+iDataXH)
+ ;ld e,(ix+iDataXL)
+ ;ld ix,SSS
+ ;add ix,de
  res redrawObjBit,(ix+iDataType)
  call drawObject
  pop ix
  
- ld hl,0
- ld h,(ix+iDataPTRH)
- ld l,(ix+iDataPTRL)
- ld de,SSS
- add hl,de
+ ld hl,(ix+iDataPTR)
  ;hl = ptr to extra coords
  
  ld de,randBag
@@ -2586,19 +2578,20 @@ getMinoGraphic:
 ;l = y
 
 drawMinoBlock:
- ld b,12
 smcDMB:
  ld h,0
  ld ix,0
  ld a,0
  ld c,0
+ ld b,0
  call drawSpriteCustomBPP
  ret
 smcDMB_h = smcDMB + 1
 smcDMB_ix = smcDMB + 4
 smcDMB_a = smcDMB + 8
 smcDMB_c = smcDMB + 10
- 
+smcDMB_b = smcDMB + 12
+
 ;inputs:
 ;de= x
 ;l = y
@@ -2630,6 +2623,8 @@ divideByBPPdmft:
  
  ld a,c
  ld (smcDMB_c),a ;pixel width
+ ld a,12
+ ld (smcDMB_b),a ;pixel height
  ld h,d ;restore setting
  pop de
  xor a
@@ -2650,7 +2645,7 @@ divideByBPPdmft:
 ;de= curdata ptr
 ;h = settings
 drawMinoFromData:
- push ix
+ ;push ix
  ex de,hl ;hl = curdata ptr, d=settings
  ld a,(hl) ;get x grid ofs
  ld (smcDMBs_xOfs),a
@@ -2668,6 +2663,7 @@ drawMinoFromData:
  inc hl
 
  push hl ;blockDataPTR
+ push ix
  push de ;d=settings
  call getMinoGraphic
  pop de ;d=settings
@@ -2675,6 +2671,7 @@ drawMinoFromData:
  ld (smcDMB_ix),ix
  ld (smcDMB_a),a
  
+ pop ix
  bit drawMinoHalf,d
  jr z,noHalfScale
  set 2,h
@@ -2685,7 +2682,11 @@ noHalfScale:
  res 2,a
  ld h,a
  
- ld c,12
+ ld a,(ix+iDataA)
+ ld c,a 
+ ld (smcDMB_b),a
+ ld (smcDMBs_tx),a
+ ld (smcDMBs_ty),a
  ld b,h
  inc b
 divideByBPPdmfd:
@@ -2701,15 +2702,19 @@ noHalfAdjust:
  
  pop hl
  ld (blockDataPTR),hl
- 
  ex de,hl ;settings in h
- pop ix 
+ 
+ ;pop ix
  ld l,(ix+iDataY)
  ld de,0
  ld d,(ix+iDataXH)
  ld e,(ix+iDataXL)
+ ld a,(ix+iDataW)
+ ld (smcDMBs_w),a
+ ld a,(ix+iDataH)
+ ld (smcDMBs_h),a
  
- jr drawMinoBlocksLoopBegin
+ ;jr drawMinoBlocksLoopBegin
  
 drawMinoBlocksLoopBegin:
  bit drawMinoErase,h
@@ -2741,13 +2746,19 @@ drawMinoBlocksLoop:
 
 smcDMBs_xOfs = $ + 1
  add a,0
+smcDMBs_w = $ + 1
  cp 10 ;if it goes past 10, it's out-of-field
  jr nc, skipDMB
- 
- call multABy12ToBC
+  
+ ld c,a
+smcDMBs_tx = $ + 1
+ ld b,12
+ mlt bc
+ ;call multABy12ToBC
  bit drawMinoHalf,h
  jr z,noHalfDMBx
- srl c ;half multiplied value
+ srl b ;half multiplied value
+ rr c ;
 noHalfDMBx:
  ;12x -> bc (or 6x if half-scale)
  ex de,hl ;hl=x
@@ -2761,15 +2772,21 @@ noHalfDMBx:
 
 smcDMBs_yOfs = $ + 1
  add a,0
+smcDMBs_h = $ + 1
  cp 20 ;if it goes past 20, it's out-of-field
  jr nc, skipDMB
  
- call multABy12ToBC
+ ld c,a
+smcDMBs_ty = $ + 1
+ ld b,12
+ mlt bc
+ ld a,c
+ ;call multABy12ToBC
  bit drawMinoHalf,h
  jr z,noHalfDMBy
  srl a ;half multiplied value
 noHalfDMBy:
- ;12y->bc
+ ;12y->bc,a
  add a,l ;add ofs to y ofs
  ld l,a
  
@@ -2806,11 +2823,7 @@ drawTextBG:
 
 ;inputs: ix = data ptr
 drawText:
- ld bc,SSS
- ld hl,0
- ld h,(ix+iDataPTRH)
- ld l,(ix+iDataPTRL)
- add hl,bc
+ ld hl,(ix+iDataPTR)
  push hl
  
  ld de,0
@@ -2901,11 +2914,7 @@ drawNumString:
 .db 0,0,0,0,0,0 ;12 bytes max
 .db 0
 draw8BitNumber:
- ld hl,0
- ld h,(ix+iDataPTRH)
- ld l,(ix+iDataPTRL)
- ld bc,PSS
- add hl,bc ;ptr to number
+ ld hl,(ix+iDataPTR)
  ld a,(hl)
  or a,a
  sbc hl,hl
@@ -2914,11 +2923,7 @@ draw8BitNumber:
  jr drawNumShared
 
 draw24BitNumber:
- ld hl,0
- ld h,(ix+iDataPTRH)
- ld l,(ix+iDataPTRL)
- ld bc,PSS
- add hl,bc ;ptr to number
+ ld hl,(ix+iDataPTR)
  
  ld hl,(hl) ;hl is number
  
@@ -2960,11 +2965,7 @@ drawSpriteObject:
 drawSpriteObj:
  ld a,h ;save bpp
  push ix
- ld hl,0
- ld h,(ix+iDataPTRH)
- ld l,(ix+iDataPTRL)
- ld bc,SSS
- add hl,bc ;ptr to number
+ ld hl,(ix+iDataPTR)
  push hl ;ptr to sprite data
  
  ld hl,0
@@ -3023,9 +3024,7 @@ drawBoxYLoop:
  jr z,isBorder
  ld a,(ix+iDataA)
 drawBorderReturn:
- ld bc,0
- ld b,(ix+iDataPTRH)
- ld c,(ix+iDataPTRL)
+ ld bc,(ix+iDataPTR)
  push hl ;save ptr to graph
 drawBoxX:
  push hl
@@ -3056,11 +3055,7 @@ isBorder:
 drawMenu:
  ld b,(ix+iDataW)
  
- ld hl,0
- ld h,(ix+iDataPTRH)
- ld l,(ix+iDataPTRL)
- ld de,SSS
- add hl,de ;hl points to text data of menu
+ ld hl,(ix+iDataPTR)
  push hl
  
  ld b,(ix+iDataW) ; # items
@@ -3120,11 +3115,7 @@ menuScanMenu:
  ld (menuPTR),ix
  
  ld b,(ix+iDataW) ;# text items
- ld hl,0
- ld h,(ix+iDataPTRH)
- ld l,(ix+iDataPTRL)
- ld de,SSS
- add hl,de ;hl=ptr to text
+ ld hl,(ix+iDataPTR)
 scanToMenuJumps:
  ld a,(hl)
  inc hl
@@ -3233,11 +3224,7 @@ smcLoadJumpTable:
 getStringPTRSelection:
  ld ix,(menuPTR)
  
- ld hl,0
- ld h,(ix+iDataPTRH)
- ld l,(ix+iDataPTRL)
- ld de,SSS
- add hl,de
+ ld hl,(ix+iDataPTR)
  
  ld a,(menuSelection)
  ;hl: pointer to string list
@@ -3258,9 +3245,9 @@ scanMenuText:
 ptrOK:
  ;pointer is found to string
  ;hl = pointer
- or a,a
- ld de,SSS
- sbc hl,de ;hl=ofs from SSS
+ ;or a,a
+ ;ld de,SSS
+ ;sbc hl,de ;hl=ofs from SSS
  ret
  
 numberMax:
@@ -3278,12 +3265,7 @@ setNumber:
  ld (numberMax),a
  ld (setNumberPTR),ix
 
- or a,a
- sbc hl,hl ;hl=0
- ld h,(ix+iDataPTRH)
- ld l,(ix+iDataPTRL)
- ld de,PSS
- add hl,de
+ ld hl,(ix+iDataPTR)
  ld (setVarPTR),hl ;points to variable to set
  
  ld a,(hl) ;get default/previous from memory
@@ -3358,6 +3340,113 @@ setNumberFinal: ;just wait for confirm/back to be released, then end
  ld ix, mbuttonConfirm
  call waitNoButton
  ret ;return from setNumber call
+
+;input:
+;ix = obj data ptr
+drawMap:
+ ld a,(ix+iDataA)
+ ld (smcDMB_b),a
+ 
+ ld hl,(drefSprite)
+ ld b,(hl)
+ inc b
+divideByBPPmap:
+ rrca
+ djnz divideByBPPmap
+ ld (smcDMB_c),a
+ 
+ ld a,(hl)
+ ld (smcDMB_h),a
+ 
+ ld hl,(ix+iDataPTR)
+ 
+ ld de,0
+ ld d,(ix+iDataXH)
+ ld e,(ix+iDataXL)
+ ld (smcDM_x),de
+ ld (smcDMy_x),de
+ 
+ ld d,0
+ ld e,(ix+iDataY)
+ ld (smcDM_y),de
+ 
+ ;at this point:
+ ;hl = ptr to map data
+ ;ix = obj data ptr
+ ;smcDMB b,c,h are set
+ ;ix,a depend on tile
+ ;stack: y,x (coords)
+ ld b,(ix+iDataH)
+drawMapLoopY:
+ ld c,b
+ ld b,(ix+iDataW)
+smcDMy_x = $ + 1
+ ld de,0
+ ld (smcDM_x),de
+drawMapLoopX:
+ push bc
+ 
+ ld a,(hl)
+ push hl
+ add a,a
+ ld hl,(drefBlocks)
+ ld de,0
+ ld e,a
+ add hl,de
+ ld b,(hl) ;block/sprite id
+ inc hl
+ ld a,(hl) ;palette
+ ld (smcDMB_a),a
+ 
+ ld a,b ;get sprite data from block id
+
+ ld hl,(drefSprite)
+ ld b,(hl) ;bpp
+ inc hl ;points to sprite data
+ inc b
+ ld c,(ix+iDataA) ;tilesize
+divideByBPPdml:
+ srl c
+ djnz divideByBPPdml
+ ld b,(ix+iDataA)
+ mlt bc ;block size squared
+ ;bc = block size in bytes. assume size <256
+ ld b,a ;sprite data id
+ mlt bc ;should be offset from drefSprite
+ add hl,bc ;points to sprite data
+ ld (smcDMB_ix),hl ;this is all set up now
+ 
+smcDM_x = $ + 1
+ ld de,0
+smcDM_y = $ + 1
+ ld hl,0
+ 
+ push ix
+ call drawMinoBlock
+ pop ix
+ 
+ ld hl,(smcDM_x)
+ ld de,0
+ ld e,(ix+iDataA) ;tile size
+ add hl,de
+ ld (smcDM_x),hl
+ 
+ pop hl
+ inc hl
+ pop bc
+ djnz drawMapLoopX
+ ld b,c
+ 
+ push hl
+ ld hl,(smcDM_y)
+ ld de,0
+ ld e,(ix+iDataA) ;tile size
+ add hl,de
+ ld (smcDM_y),hl
+ pop hl
+ 
+ djnz drawMapLoopY
+ ret
  
 randsav:
  .db 0,0,0,0

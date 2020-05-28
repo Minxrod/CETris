@@ -2,7 +2,7 @@
 
 ;program specfic constants:
 LOCK_DISABLE = -1
-NULL_BLOCK = -1
+NULL_BLOCK = 8
 vRamSplitSize = (vRamEnd - vRam) / 2 
 vRamSplit = vRam + vRamSplitSize
 
@@ -10,6 +10,8 @@ vRamSplit = vRam + vRamSplitSize
 PSS = plotSScreen
 field = PSS
 fieldHeight = 25
+fieldDrawHeight = 20
+fieldDrawWidth = 10
 
 blockDataSize = 8
 blockGraphicSize = 2
@@ -216,11 +218,13 @@ iDataXL		= 1 ;x low byte
 iDataXH		= 2 ;x high byte
 iDataY		= 3 ;y
 iDataA		= 4 ;a (used as color/palette for most)
-iDataPTRL	= 5 ;ptr offset from SSS (or extra data)
-iDataPTRH	= 6 ;sorry! SSS data must be <65536 bytes
-iDataW		= 7 ;extra data (width, # digits)
-iDataH		= 8 ;extra data 2 (height)
-iDataSize	= 9 ;size of data struct
+iDataPTR	= 5 ;ptr offset
+iDataPTRL	= 5 ;low byte
+iDataPTRH	= 6 ;high byte
+iDataPTRU	= 7 ;upper byte?
+iDataW		= 8 ;extra data (width, # digits)
+iDataH		= 9 ;extra data 2 (height)
+iDataSize	= 10 ;size of data struct
 
 ;object types, almost entirely used in tetrice_dat
 typeTetris=0
@@ -238,6 +242,7 @@ typeSprite1bpp=11
 typeNumber8=12
 typeList=13 ;unimplemented, do not use
 typeCustom=14 ;jumps to PTR provided, enables custom draw code
+typeMap=15
 
 ;data references used in main program
 ;all defined relative to SSS, so doesn't need actual data.
