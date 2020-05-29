@@ -2249,7 +2249,7 @@ drawObjectJump:
 ;jump table for various object types
 ;all should accept ix as a pointer to data
 drawJumps:
- jp drawField 
+ jp 0; drawField 
  jp drawText
  jp draw24BitNumber
  jp drawSpriteObject
@@ -2278,102 +2278,7 @@ drawCustom:
  ld hl,(ix+iDataPTR)
  
  jp (hl) ;the rest is up to special drawing code
- 
-drawNullBlock:
- ld a,0
- ld (tSpriteID),a
- ld (tSpritePAL),a
- jr drawNullBlockReturn
- 
-drawField:
- ld b,(ix+iDataH)
-drawFieldY:
- push bc
- ld c,b
- ld b,(ix+iDataW) ;(b,c) = (w,h)
-drawFieldX:
- push bc
- ld h,b
- dec h
- ld l,c
- dec l
- push hl ;display coords should be [0,19] and [0,9]
- ld a,fieldHeight - 20 ;find y coord of last 20 visible rows
- add a,l ;l + ofs from top (5, if fieldHeight is 25)
- ld l,a ;y=[0-19]+[fieldHeight-20] for reading field info
- call checkBlock
- cp NULL_BLOCK
- jr z,drawNullBlock
- ld a,(hl) ;a is now curT
- ld d,a
- add a,a ;2
- ld de,0
- ld e,a
- ld hl,(drefBlocks)
- add hl,de ;find block sprite ID and pal from here
- ld a,(hl)
- ld (tSpriteID),a
- inc hl ;spritePAL
- ld a,(hl)
- ld (tSpritePAL),a
-drawNullBlockReturn:
- pop hl ;use same grid coords, but operate differently
- ld e,h ;save e=x
- ld h,(ix+iDataA)
- mlt hl ;hl = 12*y implies l=12*y since y<20
- ld d,(ix+iDataA)
- mlt de ;de = 12*(x + xOfs)
- ;(de, l) are the coordinates
- ;now, layout offset must be added.
- ld a,(ix + iDataXL)
- add a,e
- ld e,a  ;12x+ layoutOfsX
- ld a,(ix + iDataXH)
- adc a,d ;add high byte x ofs - include carry for completeness
- ld d,a
- ld a,(ix + iDataY)
- add a,l ;no bounds check! careful!
- ld l,a
- ;de = 12xgrid+lofsx
- ;l  = 12ygrid+lofsy
- ;tSprite stuff is OK
- push ix ;preserve info ptr
- ;following code is transparency fix
- ;OLD---not in use because it lags pretty badly
- ;NEW---due to revised draw code, transparency fix
- ;is now active. remove if you have lag
- ;and have no transparent blocks.
- ld a,(tSpriteID)
- ld b,a
- ld a,(tSpritePAL)
- ld c,a
- ld a,0
- ld (tSpriteID),a
- ld (tSpritePAL),a
- push bc ;tSprite info
- push hl ;y location
- push de ;x location
- call drawOneBlockNoGrid
- pop de
- pop hl
- pop bc
- ld a,b
- ld (tSpriteID),a
- ld a,c
- ld (tSpritePAL),a
- call drawOneBlockNoGrid
- pop ix ;restore info ptr
-skipBlockDraw:
- pop bc
- djnz drawFieldX
- pop bc
- djnz drawFieldY
- 
- ;push ix
- ;call drawCurrentMino
- ;pop ix
- ret
- 
+  
 drawMinoTempDE:
  .db 0,0,0
 dmX:
@@ -2577,18 +2482,25 @@ getMinoGraphic:
 ;de = x
 ;l = y
 
-drawMinoBlock:
-smcDMB:
- ld h,0
+drawNullMinoBlock:
+smcDNMB_ix=$+2
+smcDNMB_a=$+6
  ld ix,0
  ld a,0
+ jr skipDMBixa
+drawMinoBlock:
+smcDMB:
+ ld ix,0
+ ld a,0
+skipDMBixa:
+ ld h,0
  ld c,0
  ld b,0
  call drawSpriteCustomBPP
  ret
-smcDMB_h = smcDMB + 1
-smcDMB_ix = smcDMB + 4
-smcDMB_a = smcDMB + 8
+smcDMB_ix = smcDMB + 2
+smcDMB_a = smcDMB + 6
+smcDMB_h = smcDMB + 8
 smcDMB_c = smcDMB + 10
 smcDMB_b = smcDMB + 12
 
@@ -3359,6 +3271,40 @@ divideByBPPmap:
  ld (smcDMB_h),a
  
  ld hl,(ix+iDataPTR)
+ ld a,(hl) ;null block graphic index
+ inc hl
+ ld de,(hl)
+ push de ;pointer to actual map tile data
+ 
+ ld hl,(drefBlocks)
+ add a,a
+ ld de,0
+ ld e,a
+ add hl,de ;pointer to null-block sp-pal pair
+ 
+ ld c,(hl) ;sprite index
+ inc hl
+ ld a,(hl) ;palette
+ ld (smcDNMB_a),a
+ ld a,c ;sprite index
+ 
+ ld hl,(drefSprite)
+ ld b,(hl) ;bpp
+ inc hl ;points to sprite data
+ inc b
+ ld c,(ix+iDataA) ;tilesize
+divideByBPPdml:
+ srl c
+ djnz divideByBPPdml
+ ld b,(ix+iDataA)
+ mlt bc ;block size
+ ;bc = block size in bytes. assume size <256
+ ld b,a ;sprite data id
+ mlt bc ;should be offset from drefSprite
+ add hl,bc ;points to sprite data
+ ld (smcDNMB_ix),hl ;this is all set up now
+ 
+ pop hl ;block ptr
  
  ld de,0
  ld d,(ix+iDataXH)
@@ -3405,9 +3351,9 @@ drawMapLoopX:
  inc hl ;points to sprite data
  inc b
  ld c,(ix+iDataA) ;tilesize
-divideByBPPdml:
+divideByBPPdm:
  srl c
- djnz divideByBPPdml
+ djnz divideByBPPdm
  ld b,(ix+iDataA)
  mlt bc ;block size squared
  ;bc = block size in bytes. assume size <256
@@ -3422,6 +3368,13 @@ smcDM_y = $ + 1
  ld hl,0
  
  push ix
+ push hl
+ push de
+  
+ call drawNullMinoBlock
+ pop de
+ pop hl
+ 
  call drawMinoBlock
  pop ix
  
@@ -3893,7 +3846,7 @@ initData:
  inc hl
  ld b,(hl) ;size high byte
  inc hl
- ld de,SSS
+ ld de,dataLocation
  ldir
  
  call rearchiveData

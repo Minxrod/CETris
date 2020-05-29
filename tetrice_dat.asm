@@ -54,7 +54,7 @@ fieldInfo:
 .dw 0 ;x
 .db 0 ;y
 .db 12 ;a/size of tile
-.dl (fieldHeight - fieldDrawHeight) * fieldDrawWidth + field ;eventually, consider making the field memory movable
+.dl fieldExtraInfo
 .db fieldDrawWidth, fieldDrawHeight ;10, 20 default
 holdInfo:
 .db typeHold
@@ -119,6 +119,10 @@ highscoreInfo:
 .dl highScore
 .db 8, boxcolor
 
+fieldExtraInfo:
+ .db NULL_BLOCK
+ .dl (fieldHeight - fieldDrawHeight) * fieldDrawWidth + field
+ 
 gameText
  .db "Score:",0
  .db "Timer:",0
@@ -488,7 +492,7 @@ setModeFromE:
  ld de,0
  push de
  ld e,b ;ensure de in 1 byte
- ld hl, modeData - SSS + SSS
+ ld hl, modeData
  add hl,de
  add hl,de
  add hl,de

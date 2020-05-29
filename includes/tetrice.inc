@@ -161,6 +161,8 @@ jptDrawObject = menuJumpTable + 28 ;for custom draws
 jptCheckKey = menuJumpTable + 32 ;yes
 jptSwapVRamPTR = menuJumpTable + 36 ;okay
 
+userVars = PSS + 3072
+
 ;key ids for important operations
 ;button repeat info etc.
 keyIDs:
@@ -192,7 +194,7 @@ noRepeat = -1
 
 ;graphical and data resources
 ;note: info must be RELOCATED to this location.
-SSS = saveSScreen
+dataLocation = saveSScreen
 
 ;save file consts
 savKeys = 0
@@ -249,25 +251,25 @@ typeMap=15
 drefSize = 3
 refSize = drefSize
 
-drefSprite = drefSize * 0 + SSS
-drefFont = drefSize * 1 + SSS
-drefBlocks = drefSize * 2 + SSS
-drefBackground = drefSize * 3 + SSS
-drefPalette	= drefSize * 4 + SSS
-drefMenu = drefSize * 5 + SSS
-drefPause = drefSize * 6 + SSS
-drefIInfo = drefSize * 7 + SSS
-drefGameOver = drefSize * 8 + SSS
-refField = refSize * 9 + SSS
-refHold = refSize * 10 + SSS
-refLevel = refSize * 11 + SSS
-refScore = refSize * 12 + SSS
-refLines = refSize * 13 + SSS
-refPreview = refSize * 14 + SSS
-refTimer = refSize * 15 + SSS
+drefSprite = drefSize * 0 + dataLocation
+drefFont = drefSize * 1 + dataLocation
+drefBlocks = drefSize * 2 + dataLocation
+drefBackground = drefSize * 3 + dataLocation
+drefPalette	= drefSize * 4 + dataLocation
+drefMenu = drefSize * 5 + dataLocation
+drefPause = drefSize * 6 + dataLocation
+drefIInfo = drefSize * 7 + dataLocation
+drefGameOver = drefSize * 8 + dataLocation
+refField = refSize * 9 + dataLocation
+refHold = refSize * 10 + dataLocation
+refLevel = refSize * 11 + dataLocation
+refScore = refSize * 12 + dataLocation
+refLines = refSize * 13 + dataLocation
+refPreview = refSize * 14 + dataLocation
+refTimer = refSize * 15 + dataLocation
 ;this is where the appvar/graphical data can set itself up, if necessary
 ;example: loading themes
-initDataStart = refSize * 16 + SSS
+initDataStart = refSize * 16 + dataLocation
 
 sp1bpp = 0
 sp2bpp = 1
