@@ -1,278 +1,287 @@
 #include "includes\ti84pce.inc"
 
 ;program specfic constants:
-LOCK_DISABLE = -1
-NULL_BLOCK = 8
-vRamSplitSize = (vRamEnd - vRam) / 2 
-vRamSplit = vRam + vRamSplitSize
+LOCK_DISABLE 	equ	 -1
+NULL_BLOCK 	equ	 8
+vRamSplitSize 	equ	 (vRamEnd - vRam) / 2 
+vRamSplit 	equ	 vRam + vRamSplitSize
 
 ;variables and memory regions
-PSS = plotSScreen
-field = PSS
-fieldHeight = 25
-fieldDrawHeight = 20
-fieldDrawWidth = 10
+PSS 	equ	 plotSScreen
+field 	equ	 PSS
+fieldHeight 	equ	 25
+fieldDrawHeight 	equ	 20
+fieldDrawWidth 	equ	 10
 
-blockDataSize = 8
-blockGraphicSize = 2
+blockDataSize 	equ	 8
+blockGraphicSize 	equ	 2
 
 ;current status bits
-csLockedBit = 0    ;locked block bit
-csNewBlockBit = 1  ;prev. frame requests new block
-csClearLineBit = 2 ;if block cleared a line
-csGarbageBit = 3   ;apply garbage stored (unused)
-csRotateTBit = 4   ;T-block last move was rotate
-csWallKicked = 5   ;if last rotate was kicked
-csUsedHold = 6     ;hold was used once already
+csLockedBit 	equ	 0    ;locked block bit
+csNewBlockBit 	equ	 1  ;prev. frame requests new block
+csClearLineBit 	equ	 2 ;if block cleared a line
+csGarbageBit 	equ	 3   ;apply garbage stored (unused)
+csRotateTBit 	equ	 4   ;T-block last move was rotate
+csWallKicked 	equ	 5   ;if last rotate was kicked
+csUsedHold 	equ	 6     ;hold was used once already
 
-holdT= PSS + 256
+holdT	equ	 PSS + 256
 ;current mino data
-curData = PSS + 266
-curX = curData + 0
-curY = curData + 1
-curR = curData + 2
-curT = curData + 3
-curStatus = curData + 4
-curBlock = curData + 5 ;size: 10
-curDataSize = curBlock + blockDataSize + blockGraphicSize - curX
+curData 	equ	 PSS + 266
+curX 	equ	 curData + 0
+curY 	equ	 curData + 1
+curR 	equ	 curData + 2
+curT 	equ	 curData + 3
+curStatus 	equ	 curData + 4
+curBlock 	equ	 curData + 5 ;size: 10
+curDataSize 	equ	 curBlock + blockDataSize + blockGraphicSize - curX
 
 ;inbetween cur and old is a middle data chunk
 ;used to handle intermediate frames due to
 ;double-buffer
 ;note: should not actually be used, probably?
-midOfs = curDataSize
-midData = midOfs + curData
+midOfs 	equ	 curDataSize
+midData 	equ	 midOfs + curData
 
 ;saves data from previous frame here
-oldOfs = 2 * midOfs ;alt. 2 * curDataSize
-oldData = oldOfs + curData
+oldOfs 	equ	 2 * midOfs ;alt. 2 * curDataSize
+oldData 	equ	 oldOfs + curData
 
-oldX = oldOfs + curX
-oldY = oldOfs + curY
-oldR = oldOfs + curR
-oldT = oldOfs + curT
-oldBlock = oldOfs + curBlock
+oldX 	equ	 oldOfs + curX
+oldY 	equ	 oldOfs + curY
+oldR 	equ	 oldOfs + curR
+oldT 	equ	 oldOfs + curT
+oldBlock 	equ	 oldOfs + curBlock
 
-score = PSS + 320
-level = PSS + 324
-lines = PSS + 328 
-linesToNextLevel = PSS + 332
-timerT = PSS + 336
-lockTimer = PSS + 340
-globalTimer = PSS + 348
-highscore = PSS + 352
-garbageTimer = PSS + 356
-queuedGarbage = PSS + 360
-linesClear = PSS + 364
-lineClearInfo = PSS + 365
-lcBackToBack = 0
-lcPreviousB2B = 1
-lcTSpin = 2 ;set even if no lines clear
+score 	equ	 PSS + 320
+level 	equ	 PSS + 324
+lines 	equ	 PSS + 328 
+linesToNextLevel 	equ	 PSS + 332
+timerT 	equ	 PSS + 336
+lockTimer 	equ	 PSS + 340
+globalTimer 	equ	 PSS + 348
+highscore 	equ	 PSS + 352
+garbageTimer 	equ	 PSS + 356
+queuedGarbage 	equ	 PSS + 360
+linesClear 	equ	 PSS + 364
+lineClearInfo 	equ	 PSS + 365
+lcBackToBack 	equ	 0
+lcPreviousB2B 	equ	 1
+lcTSpin 	equ	 2 ;set even if no lines clear
 
 ;not the best location
 ;but I don't really know where to put this stuff
-saveDataPTR = PSS + 400 
-menuSelection = PSS + 404
-numberSelection = PSS + 408
+saveDataPTR 	equ	 PSS + 400 
+menuSelection 	equ	 PSS + 404
+numberSelection 	equ	 PSS + 408
 
 ;data for various rules, stored as offset from rules
 ;garbage set
-rMode = -4 ;why did I forget this
-rRGT = -1 ;rising garbage timer
-rRGD = -2;rising garbage density
+rMode 	equ	 -4 ;why did I forget this
+rRGT 	equ	 -1 ;rising garbage timer
+rRGD 	equ	 -2;rising garbage density
 ;generated set
-rGGA = -1;generated garbage amt
-rGGD = -2 ;generated garbage density
+rGGA 	equ	 -1;generated garbage amt
+rGGD 	equ	 -2 ;generated garbage density
 ;line clear data
-rLCW = -3;lines needed to clear to win
+rLCW 	equ	 -3;lines needed to clear to win
 
-rules = PSS + 512
+rules 	equ	 PSS + 512
 
-rfBasic = 0 ;basic mechanics
-rfExtra = 1 ;extra mechanics
-rfWin = 2 ;win condition currently set
-rfScore = 3 ;high score method
+rfBasic 	equ	 0 ;basic mechanics
+rfExtra 	equ	 1 ;extra mechanics
+rfWin 	equ	 2 ;win condition currently set
+rfScore 	equ	 3 ;high score method
 
-rbitGameCont = 0
-rbitGameWon = 1
-rbitSRSEnabled = 2
-rbitPreviewEnabled = 3
-rbitHoldEnabled = 4
-rbitHardDropEnabled = 5
-rbitBagEnabled = 6
+rbitGameCont 	equ	 0
+rbitGameWon 	equ	 1
+rbitSRSEnabled 	equ	 2
+rbitPreviewEnabled 	equ	 3
+rbitHoldEnabled 	equ	 4
+rbitHardDropEnabled 	equ	 5
+rbitBagEnabled 	equ	 6
 
-rbitunusedextra = 0
-rbitGarbageRising = 1
-rbitGarbageInitial = 2
-rbitCascadeGravity = 3
-rbitCascadeAnimation = 4
+rbitunusedextra 	equ	 0
+rbitGarbageRising 	equ	 1
+rbitGarbageInitial 	equ	 2
+rbitCascadeGravity 	equ	 3
+rbitCascadeAnimation 	equ	 4
 
-rbitLinesClear = 0
-rbitRow0Clear = 1 ;for garbage/generated games
-rbitCountdown = 2 ;timed survival games
+rbitLinesClear 	equ	 0
+rbitRow0Clear 	equ	 1 ;for garbage/generated games
+rbitCountdown 	equ	 2 ;timed survival games
 
-rbitHighScore = 0
-rbitLowTime = 1
-rbitHighLine = 2
+rbitHighScore 	equ	 0
+rbitLowTime 	equ	 1
+rbitHighLine 	equ	 2
 
-rNull = 0
-rGame = 1 << rbitGameCont
-rGameWon = 1 << rbitGameWon ;if game was won or lost
-rSRS = 1 << rbitSRSEnabled
-rPreview = 1 << rbitPreviewEnabled
-rHold = 1 << rbitHoldEnabled 
-rHardDrop = 1 << rbitHardDropEnabled
-rBag = 1 << rbitBagEnabled
+rNull 	equ	 0
+rGame 	equ	 1 << rbitGameCont
+rGameWon 	equ	 1 << rbitGameWon ;if game was won or lost
+rSRS 	equ	 1 << rbitSRSEnabled
+rPreview 	equ	 1 << rbitPreviewEnabled
+rHold 	equ	 1 << rbitHoldEnabled 
+rHardDrop 	equ	 1 << rbitHardDropEnabled
+rBag 	equ	 1 << rbitBagEnabled
 
-rUnused = 1 << rbitunusedextra
-rRising = 1 << rbitGarbageRising
-rGenerated = 1 << rbitGarbageInitial
-rCascade = 1 << rbitCascadeGravity
-rCascadeAnim = 1 << rbitCascadeAnimation
+rUnused 	equ	 1 << rbitunusedextra
+rRising 	equ	 1 << rbitGarbageRising
+rGenerated 	equ	 1 << rbitGarbageInitial
+rCascade 	equ	 1 << rbitCascadeGravity
+rCascadeAnim 	equ	 1 << rbitCascadeAnimation
 
-rLines = 1 << rbitLinesClear
-rRow0 = 1 << rbitRow0Clear
-rCountdown = 1 << rbitCountdown
+rLines 	equ	 1 << rbitLinesClear
+rRow0 	equ	 1 << rbitRow0Clear
+rCountdown 	equ	 1 << rbitCountdown
 
-rScore = 1 << rbitHighScore
-rTime = 1 << rbitLowTime
-rLine = 1 << rbitHighLine 
+rScore 	equ	 1 << rbitHighScore
+rTime 	equ	 1 << rbitLowTime
+rLine 	equ	 1 << rbitHighLine 
 
-rMarathon = rGame | rSRS | rPreview | rHold | rHardDrop | rBag
-rRetro = rGame
+rMarathon 	equ	 rGame | rSRS | rPreview | rHold | rHardDrop | rBag
+rRetro 	equ	 rGame
 
-rCascadeExtra = rCascade | rCascadeAnim
+rCascadeExtra 	equ	 rCascade | rCascadeAnim
 
-lockDelay = PSS + 760
-theme = PSS + 764 ;precedes blockData
-blockData = PSS + 768
-buttonData = PSS + 1024
-blockGraphic = PSS + 1280
+lockDelay 	equ	 PSS + 760
+theme 	equ	 PSS + 764 ;precedes blockData
+blockData 	equ	 PSS + 768
+buttonData 	equ	 PSS + 1024
+blockGraphic 	equ	 PSS + 1280
 
-menuJumpTable = PSS + 2048
-jptMainMenu = menuJumpTable + 0
-jptInitGame = menuJumpTable + 4	
-jptExit = menuJumpTable + 8
-jptActiveMenu = menuJumpTable + 12
-jptGetStringInList = menuJumpTable + 16
-jptGetStringPTRSelection = menuJumpTable + 20
-jptSetNumber = menuJumpTable + 24
-jptDrawObject = menuJumpTable + 28 ;for custom draws
-jptCheckKey = menuJumpTable + 32 ;yes
-jptSwapVRamPTR = menuJumpTable + 36 ;okay
+menuJumpTable 	equ	 PSS + 2048
+jptMainMenu 	equ	 menuJumpTable + 0
+jptInitGame 	equ	 menuJumpTable + 4	
+jptExit 	equ	 menuJumpTable + 8
+jptActiveMenu 	equ	 menuJumpTable + 12
+jptGetStringInList 	equ	 menuJumpTable + 16
+jptGetStringPTRSelection 	equ	 menuJumpTable + 20
+jptSetNumber 	equ	 menuJumpTable + 24
+jptDrawObject 	equ	 menuJumpTable + 28 ;for custom draws
+jptCheckKey 	equ	 menuJumpTable + 32 ;yes
+jptSwapVRamPTR 	equ	 menuJumpTable + 36 ;okay
 
-userVars = PSS + 3072
+userVars 	equ	 PSS + 3072
 
 ;key ids for important operations
 ;button repeat info etc.
 keyIDs:
-buttonID=0
-buttonTimeStart=1
-buttonTimeRepeat=2
-buttonTimer=3
-buttonDataSize=4
+buttonID	equ	0
+buttonTimeStart	equ	1
+buttonTimeRepeat	equ	2
+buttonTimer	equ	3
+buttonDataSize	equ	4
 
-buttonLeft = 0 * buttonDataSize + buttonData
-buttonRight = 1 * buttonDataSize + buttonData
-buttonSoft = 2 * buttonDataSize + buttonData
-buttonHard = 3 * buttonDataSize + buttonData
-buttonRotateLeft = 4 * buttonDataSize + buttonData
-buttonRotateRight = 5 * buttonDataSize + buttonData
-buttonHold = 6 * buttonDataSize + buttonData
-buttonPause = 7 * buttonDataSize + buttonData
+buttonLeft 	equ	 0 * buttonDataSize + buttonData
+buttonRight 	equ	 1 * buttonDataSize + buttonData
+buttonSoft 	equ	 2 * buttonDataSize + buttonData
+buttonHard 	equ	 3 * buttonDataSize + buttonData
+buttonRotateLeft 	equ	 4 * buttonDataSize + buttonData
+buttonRotateRight 	equ	 5 * buttonDataSize + buttonData
+buttonHold 	equ	 6 * buttonDataSize + buttonData
+buttonPause 	equ	 7 * buttonDataSize + buttonData
 
-mbuttonUp = 8 * buttonDataSize + buttonData
-mbuttonDown = 9 * buttonDataSize + buttonData
-mbuttonLeft = 10 * buttonDataSize + buttonData
-mbuttonRight = 11 * buttonDataSize + buttonData
+mbuttonUp 	equ	 8 * buttonDataSize + buttonData
+mbuttonDown 	equ	 9 * buttonDataSize + buttonData
+mbuttonLeft 	equ	 10 * buttonDataSize + buttonData
+mbuttonRight 	equ	 11 * buttonDataSize + buttonData
 
-mbuttonConfirm = 12 * buttonDataSize + buttonData
-mbuttonBack = 13 * buttonDataSize + buttonData
-mbuttonQuit = 14 * buttonDataSize + buttonData
+mbuttonConfirm 	equ	 12 * buttonDataSize + buttonData
+mbuttonBack 	equ	 13 * buttonDataSize + buttonData
+mbuttonQuit 	equ	 14 * buttonDataSize + buttonData
 
-noRepeat = -1
+noRepeat 	equ	 -1
 
 ;graphical and data resources
 ;note: info must be RELOCATED to this location.
-dataLocation = saveSScreen
+dataLocation 	equ	 saveSScreen
 
 ;save file consts
-savKeys = 0
-savTheme = 64 ;appvar name for theme
-savThemeSub = 73 ;block theme id, etc.
-savHighscore = 74
-savHighSize = 8
-savSize = 512 ;save should not pass this size, kinda large.
-savScoreSize = savSize - savHighScore ;
+savKeys 	equ	 0
+savTheme 	equ	 64 ;appvar name for theme
+savThemeSub 	equ	 73 ;block theme id, etc.
+savHighscore 	equ	 74
+savHighSize 	equ	 8
+savSize 	equ	 512 ;save should not pass this size, kinda large.
+savScoreSize 	equ	 savSize - savHighScore ;
 
 ;drawing stuff
-drawMinoErase = 0
-drawMinoHalf = 1
-drawMinoDark = 2
-;drawMinoFromPTR = 3 ;no longer useful
+drawMinoErase 	equ	 0
+drawMinoHalf 	equ	 1
+drawMinoDark 	equ	 2
+;drawMinoFromPTR 	equ	 3 ;no longer useful
 
 ;bit set/reset when an object must be updated
-redrawObjBit = 7
+redrawObjBit 	equ	 7
 
-;various equates for itemsInfo
-iDataType 	= 0 ;type of data (use type~ to check)
-iDataXL		= 1 ;x low byte
-iDataXH		= 2 ;x high byte
-iDataY		= 3 ;y
-iDataA		= 4 ;a (used as color/palette for most)
-iDataPTR	= 5 ;ptr offset
-iDataPTRL	= 5 ;low byte
-iDataPTRH	= 6 ;high byte
-iDataPTRU	= 7 ;upper byte?
-iDataW		= 8 ;extra data (width, # digits)
-iDataH		= 9 ;extra data 2 (height)
-iDataSize	= 10 ;size of data struct
+;variou	equates for itemsInfo
+iDataType 		equ	 0 ;type of data (use type~ to check)
+iDataXL			equ	 1 ;x low byte
+iDataXH			equ	 2 ;x high byte
+iDataY			equ	 3 ;y
+iDataA			equ	 4 ;a (used as color/palette for most)
+iDataPTR		equ	 5 ;ptr offset
+iDataPTRL		equ	 5 ;low byte
+iDataPTRH		equ	 6 ;high byte
+iDataPTRU		equ	 7 ;upper byte?
+iDataW			equ	 8 ;extra data (width, # digits)
+iDataH			equ	 9 ;extra data 2 (height)
+iDataSize		equ	 10 ;size of data struct
+
+iExtType		equ	 10 ;
+iExtTile		equ	 11 ;ptr to tile sprite data
+iExtTileset		equ	 14 ;ptr to sprite/palette pairs
+iExtMap			equ	 17 ;ptr to map data
+iExtSize		equ	 20 ;size of extended data
+
 
 ;object types, almost entirely used in tetrice_dat
-typeTetris=0
-typeString=1
-typeNumber=2
-typeSprite=3 ;obsolete, acts like typeSprite8bpp
-typeHold=4
-typePreview=5
-typeBox=6
-typeMenu=7
-typeSprite8bpp=8
-typeSprite4bpp=9
-typeSprite2bpp=10
-typeSprite1bpp=11
-typeNumber8=12
-typeList=13 ;unimplemented, do not use
-typeCustom=14 ;jumps to PTR provided, enables custom draw code
-typeMap=15
+typeTetris	equ	0
+typeString	equ	1
+typeNumber	equ	2
+typeSprite	equ	3 ;obsolete, acts like typeSprite8bpp
+typeHold	equ	4
+typePreview	equ	5
+typeBox	equ	6
+typeMenu	equ	7
+typeSprite8bpp	equ	8
+typeSprite4bpp	equ	9
+typeSprite2bpp	equ	10
+typeSprite1bpp	equ	11
+typeNumber8	equ	12
+typeList	equ	13 ;unimplemented, do not use
+typeCustom	equ	14 ;jumps to PTR provided, enables custom draw code
+typeMap	equ	15
+typeMapWithBG	equ	16 ; draws a tilemap with a "background" block drawn under/before each tile
+typeExtended	equ 	0 ;ignore
 
 ;data references used in main program
 ;all defined relative to SSS, so doesn't need actual data.
-drefSize = 3
-refSize = drefSize
+drefSize 	equ	 3
+refSize 	equ	 drefSize
 
-drefSprite = drefSize * 0 + dataLocation
-drefFont = drefSize * 1 + dataLocation
-drefBlocks = drefSize * 2 + dataLocation
-drefBackground = drefSize * 3 + dataLocation
-drefPalette	= drefSize * 4 + dataLocation
-drefMenu = drefSize * 5 + dataLocation
-drefPause = drefSize * 6 + dataLocation
-drefIInfo = drefSize * 7 + dataLocation
-drefGameOver = drefSize * 8 + dataLocation
-refField = refSize * 9 + dataLocation
-refHold = refSize * 10 + dataLocation
-refLevel = refSize * 11 + dataLocation
-refScore = refSize * 12 + dataLocation
-refLines = refSize * 13 + dataLocation
-refPreview = refSize * 14 + dataLocation
-refTimer = refSize * 15 + dataLocation
+drefSprite 	equ	 drefSize * 0 + dataLocation
+drefFont 	equ	 drefSize * 1 + dataLocation
+drefBlocks 	equ	 drefSize * 2 + dataLocation
+drefBackground 	equ	 drefSize * 3 + dataLocation
+drefPalette		equ	 drefSize * 4 + dataLocation
+drefMenu 	equ	 drefSize * 5 + dataLocation
+drefPause 	equ	 drefSize * 6 + dataLocation
+drefIInfo 	equ	 drefSize * 7 + dataLocation
+drefGameOver 	equ	 drefSize * 8 + dataLocation
+refField 	equ	 refSize * 9 + dataLocation
+refHold 	equ	 refSize * 10 + dataLocation
+refLevel 	equ	 refSize * 11 + dataLocation
+refScore 	equ	 refSize * 12 + dataLocation
+refLines 	equ	 refSize * 13 + dataLocation
+refPreview 	equ	 refSize * 14 + dataLocation
+refTimer 	equ	 refSize * 15 + dataLocation
 ;this is where the appvar/graphical data can set itself up, if necessary
 ;example: loading themes
-initDataStart = refSize * 16 + dataLocation
+initDataStart 	equ	 refSize * 16 + dataLocation
 
-sp1bpp = 0
-sp2bpp = 1
-sp4bpp = 2
-sp8bpp = 3
+sp1bpp 	equ	 0
+sp2bpp 	equ	 1
+sp4bpp 	equ	 2
+sp8bpp 	equ	 3
  
