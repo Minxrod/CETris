@@ -16,8 +16,8 @@ main:
  
  call initLCD ;screen init (requires data for palette) 
  
- ld ix,testMenu
- call drawObjectNoReset
+ ld ix,testCompound
+ call drawObject
  call swapVRamPTR
 test_select:
  call _GetCSC
@@ -130,6 +130,17 @@ testNum:
 
 preserveSP:
  .dl 0
+
+testCompound:
+ .db typeCompound
+ .dw 0
+ .db 0
+ .db 0
+ .dl testAll
+ .db 0, 0
+
+testAll:
+ .db 11
 
 testSpd:
  .db typeNumber

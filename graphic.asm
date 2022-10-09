@@ -206,9 +206,6 @@ ppbpp:
  jp put2bppHalfScale
  jp put4bppHalfScale
  jp put8bppHalfScale
- jp put1bppNoTrans
- jp put2bppNoTrans
- jp put4bppNoTrans
 
 ;a=pal
 ;hl=data ptr
@@ -423,71 +420,6 @@ skipRow1h:
  djnz skipRow1h
  jp putPixelReturn
  
-;input: h
-;destroys: b
-;output: c = 1 << h
-getBPPFromID:
- ld b,h
- inc b
- ld c,$01
-shiftLoop:
- rlc c
- djnz shiftLoop
- rrc c
- ret
-
- ;draws a block from coords + set tSpriteId, tSpritePAL
- ;no bounds check 
- ;accepts (DE, L) as coordinates
- ;still needs tSpriteID and tSpritePAL
-
- ;drawOneBlockHalfScale: 
- ;ld ix, smcScaleBPP
- ;set 1,(ix+1)
- ;jr drawOneBlockShared
- 
-drawOneBlockNoGrid:
- ;ld ix, smcScaleBPP
- ;res 1,(ix+1)
- ;jr drawOneBlockShared
-
-;drawOneBlockShared:
- ld ix, (drefSprite)
- ld h, (ix) ;get bpp
- inc ix
- ld bc,0
- call getBPPFromID
- ;h = bpp id
- ;c = bpp #
- 
- ld a, (tSpriteID)
- ld b,144
- mlt bc ;12 * 12 * c
- srl b
- rr c
- srl b
- rr c 
- srl b
- rr c ;144 * c / 8 where c is in [1,2,4,8]
- ;therefore, c<256 and b can be mlt'd again
- ld b, a
- mlt bc ;spritedatasize*spriteID
- add ix,bc
- 
- ld c,12 ;width in BYTES
- ld b,h
- inc b
-divideByBPP:
- rrc c
- djnz divideByBPP
- ld b,12
- ld a, (tSpritePAL)
- ;smcScaleBPP:
- ;res 3, h ;default is res: smc to SET if half
- call drawSpriteCustomBPP
- ;pop hl ;restore old coordinates
- ret
- 
 ;input: ix = info ptr, 1st elem. is # struct elems
 drawObjects:
  ld a,$00 ;nop
@@ -522,6 +454,25 @@ resAllObjects:
  djnz resAllObjects
  ret
  
+;draws all objects in subobject
+;(lets only one redraw flag cover multiple items)
+drawCompound:
+ ld a,(smcRedrawReset)
+ ld ix,(ix+iDataPTR) ;now points to new set of objects
+ ld b,(ix) ; object count
+ inc ix ; points to first object
+ push af
+drawAllSubobjects:
+ push bc
+ call drawObjectNoReset
+ ld de,iDataSize
+ add ix,de
+ pop bc
+ djnz drawAllSubobjects
+ pop af
+ ld (smcRedrawReset),a
+ ret
+
 drawObjectNoReset:
  ld a,$c9 ;ret = $c9
  ld (smcRedrawReset),a
@@ -543,7 +494,7 @@ drawObjectJump:
  ld e, (ix+iDataType) ;e is data type
  sla e
  ret c ;return if already drawn
- ret z ;also return if it should be ignored always
+; ret z ;also return if it should be ignored always
  sla e
  
  ld hl,drawJumps
@@ -555,28 +506,39 @@ drawObjectJump:
 ;jump table for various object types
 ;all should accept ix as a pointer to data
 drawJumps:
- jp 0; drawField 
- jp drawText
- jp draw24BitNumber
- jp drawSpriteObject
- jp 0 ;drawCurrentHold
- jp 0 ;drawPreview
- jp drawBox
- jp drawMenu
- ld h,sp8bpp
- jr sharedDSO
- ld h,sp4bpp
+;various sprite types
+ ld h,sp1bpp
  jr sharedDSO
  ld h,sp2bpp
  jr sharedDSO
- ld h,sp1bpp
+ ld h,sp4bpp
  jr sharedDSO
+ ld h,sp8bpp
+ jr sharedDSO
+ ld h,sp1bpp | spHalf 
+ jr sharedDSO
+ ld h,sp2bpp | spHalf
+ jr sharedDSO
+ ld h,sp4bpp | spHalf
+ jr sharedDSO
+ ld h,sp8bpp | spHalf
+ jr sharedDSO
+; built on sprites
+ jp drawText
+ jp draw24BitNumber
+ jp drawMenu
  jp draw8BitNumber
- jp 0 ;undefined
- jp drawCustom
  jp drawMap
- ret ;this one is just aesthetic
- 
+; other 
+ jp drawBox
+ jp drawCustom
+ jp drawCompound
+ ret ; ignore this type (used for adding extra data within a second slot)
+ nop
+ nop
+ nop 
+
+
 sharedDSO:
  jp drawSpriteObj
 
@@ -587,22 +549,6 @@ drawCustom:
   
 blockDataPTR:
  .dl 0 
-
-drawBlock: 
-smcDMB:
- ld ix,0
- ld a,0
-skipBackgroundBixa:
- ld h,0
- ld c,0
- ld b,0
- call drawSpriteCustomBPP
- ret
-smcDMB_ix = smcDMB + 2
-smcDMB_a = smcDMB + 6
-smcDMB_h = smcDMB + 8
-smcDMB_c = smcDMB + 10
-smcDMB_b = smcDMB + 12
 
 drawTextColor:
  .db 0
@@ -1138,9 +1084,8 @@ drawMapWithBG:
 ;input:
 ;a = block size (in pixels) [0,127]
 ;b = bits/pixel [0,3]
-;destroys:
-;c = copy of a
 ;returns:
+;c = block size (in pixels)
 ;a = block size (in bytes)
 getBlockSizeBytes:
  ld c,a
@@ -1596,28 +1541,3 @@ RestoreKeyboard:
  ld (hl),a	; Number of columns to scan
  ret
 
-tSpriteID:
- .db 0
-tSpritePAL:
- .db 0
- 
-;this is needed to give important menu jumps 
-;fixed addresses to call from the data file, 
-;which doesn't have access to the main program's 
-;data. That way, menus can be designed separately
-;from the program and allow for more customization.
-;this will be copied to PSS+2048
-menuJumps:
-; jp mainMenu				;return to main menu
-; jp initGame				;start game
- jp 0
- jp 0
- jp exit					;exit program
- jp activeMenu				;"runs" a menu object
- jp getStringInList			;gets [a] in menu/list
- jp getStringPTRSelection	;gets selected item
- jp setNumber				;select 8bit number
- jp drawObject				;draw given object
- jp checkKey				;keypress to [a]
- jp swapVRamPTR				;exactly what it says
-menuJumpsEnd:

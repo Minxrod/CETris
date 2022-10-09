@@ -236,24 +236,23 @@ iExtSize		equ	 20 ;size of extended data
 
 
 ;object types, almost entirely used in tetrice_dat
-typeTetris	equ	0
-typeString	equ	1
-typeNumber	equ	2
-typeSprite	equ	3 ;obsolete, acts like typeSprite8bpp
-typeHold	equ	4
-typePreview	equ	5
-typeBox	equ	6
-typeMenu	equ	7
-typeSprite8bpp	equ	8
-typeSprite4bpp	equ	9
-typeSprite2bpp	equ	10
-typeSprite1bpp	equ	11
-typeNumber8	equ	12
-typeList	equ	13 ;unimplemented, do not use
+typeSprite1bpp	equ	0
+typeSprite2bpp	equ	1
+typeSprite4bpp	equ	2
+typeSprite8bpp	equ	3
+typeSprite1Half	equ	4
+typeSprite2Half	equ	5
+typeSprite4Half	equ	6
+typeSprite8Half	equ	7
+typeString	equ	8
+typeNumber	equ	9
+typeMenu	equ	10
+typeNumber8	equ	11
+typeMap	equ	12
+typeBox	equ	13
 typeCustom	equ	14 ;jumps to PTR provided, enables custom draw code
-typeMap	equ	15
-typeMapWithBG	equ	16 ; draws a tilemap with a "background" block drawn under/before each tile
-typeExtended	equ 	0 ;ignore
+typeCompound	equ	15 ;uses pointer to another set of objects
+typeExtended	equ 	16 ;ignore
 
 ;data references used in main program
 ;all defined relative to SSS, so doesn't need actual data.
@@ -284,4 +283,4 @@ sp1bpp 	equ	 0
 sp2bpp 	equ	 1
 sp4bpp 	equ	 2
 sp8bpp 	equ	 3
- 
+spHalf	equ	 4 ;OR with previous ~ default is 1bpp
