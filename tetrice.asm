@@ -24,6 +24,12 @@ main:
  
  ;initialize various data
  call initData	;important info + appvar load
+ 
+ ld hl,(drefFont)
+ ld (smcFontDataPtr),hl
+ ld hl,(drefPalette)
+ ld (smcPaletteDataPtr),hl
+ 
  call initLCD ;screen init (requires data for palette)
  
  call defaultInfo ;default game rules/information
@@ -960,7 +966,7 @@ newBlock:
  ld hl,(refPreview)
  res redrawObjBit, (hl)
 
- ld a,5
+ ld a,4
  ld (curX),a
  ld a,4
  ld (curY),a
@@ -994,7 +1000,6 @@ newBlock:
  ld de,0
  ld e,a
  add ix, de
- ld a,(ix+spritePAL)
  ld a,(curT) ;ensure copied blockdata is CORRECT?
  call copyBlockData
  
@@ -1025,7 +1030,6 @@ determinedBlock:
  ld de,0
  ld e,a
  add ix, de
- ld a,(ix+spritePAL)
  ld a,(curT) ;ensure copied blockdata is CORRECT?
  call copyBlockData
  ret
@@ -1077,84 +1081,121 @@ blockTooFarLeft:
  call checkBlockDownOK
  ret
 
-lineKickLeft:
- ld hl, kicksI
- jr sharedKickLeft
- 
+;inputs:
+;a = $44 -> neg x
+;b = $44 -> neg y
+;hl = 10 or -10? (direction to travel kick table)
+ModifyRotate:
+;ld a,$44 ;neg
+ ld (smcCheckRotateNegX),a
+ ld (smcRotateNegX),a
+ ld a,b
+;ld a,$3c ;tst a (used as a 2-byte no-op)
+ ld (smcCheckRotateNegY),a
+ ld (smcRotateNegY),a
+;ld hl,-10
+ ld (smcCheckCalcRXY),hl
+ ld (smcNoRotateRXY),hl
+ ret
+
 checkRotationLeft:
- ld a,(curT)
- cp 3
- ret z
- cp 0
- jr z, lineKickLeft
- 
- ld hl, kicksNormal
-sharedKickLeft:
- push hl ;save table address
- 
  ld a,(curR)
- cp 0
+ or a,a
  jr nz,skipAdjust4
  ld a,4
 skipAdjust4:
  ld (curR),a
+; modify a bunch of different points that are similar but not identical 
+ ld a,$44
+ ld b,$3c
+ ld hl,-10
+ call ModifyRotate
+ jr checkRotation
 
+checkRotationRight:
+; modify a bunch of different points that are similar but not identical 
+ ld a,$3c ;tst a (essentially a two-byte NOP here)
+ ld b,$44
+ ld hl,10
+ call ModifyRotate
+ jr checkRotation
+
+checkRotation:
+ ld a,(curT)
+ ld hl, kicksNormal
+ cp 1 ; check I piece
+ jr nz, notIKicks
+ ld hl, kicksI
+notIKicks:
+ cp 4 ; check O piece
+ jr nz, notOKicks
+ ld hl, kicksO
+notOKicks:
+ push hl ;save table address
+ 
  call getTableOffset ;de=offset
  pop hl ;restore table address
  add hl,de ;offset + table = starting rotation kick
- 
+
+smcCheckCalcRXY=$+1
  ld de,-10
  call calculateRXY ;hl is up two now, rxy stored
  push hl ;at next offset already
  
- ld a,0
+ xor a
  ld (rAttempt),a ;there are currently 0 rotation attempts.
  
  ld hl, curBlock
- ld b,4
- 
-checkBlocksRotateLeft:
+ ld b,4 ;TODO make variable
+checkBlocksRotate:
  ld (rotationTempBC),bc
- ;get y
+ ;will be <x,y> to <-y,x> LEFT or <y,-x> RIGHT
+ ;get new y
  ld a,(hl)
+smcCheckRotateNegX=$+1
  neg
  ld e,a
  ld a,(rY)
  add a,e
- cp fieldHeight
- jp nc, noRotationLeft
+ cp fieldHeight ;TODO: make variable
+ jp nc, noRotation
  ld e,a
  
- ;get x
+ ;get new x
  inc hl
  ld a,(hl)
+smcCheckRotateNegY=$+1
+ neg
  ld d,a
  ld a,(rX)
  add a,d
- cp 10
- jr nc, noRotationLeft
+ cp 10 ;TODO: make variable
+ jr nc, noRotation
  ld d,a
  
  ld (rotationTempHL),hl
  push de
- pop hl
+ pop hl ;d,e -> h,l are new rotated coordinates
  call checkBlock
  cp NULL_BLOCK
- jp nz,noRotationLeft
+ jp nz,noRotation ; if a block is found, can't rotate this way
  ld hl,(rotationTempHL)
- inc hl
+ inc hl ;hl now points to next x offset
  ld bc,(rotationTempBC)
- djnz checkBlocksRotateLeft
+ djnz checkBlocksRotate
 ;rotation is a go
  ld b,4
  ld hl, curBlock
-rotateBlocksLeft:
+rotateBlocks:
  push bc
  ld a,(hl)
+smcRotateNegX=$+1
  neg
  ld e,a
  inc hl
  ld a,(hl)
+smcRotateNegY=$+1
+ neg
  ld d,a
  dec hl ;back to X location
  ld (hl),d
@@ -1162,8 +1203,8 @@ rotateBlocksLeft:
  ld (hl),e ;blocks have rotated: now do the next one
  inc hl
  pop bc
- djnz rotateBlocksLeft
- pop hl
+ djnz rotateBlocks
+ pop hl ;next kick offset (unneeded here)
  
  ld a,(curR)
  dec a
@@ -1176,28 +1217,28 @@ rotateBlocksLeft:
  ld (curY),a
  
  ;check t-spin
- push hl
  ld hl,curStatus
  ld a,(curT)
- cp 5
- jr nz, noTRotateLeft
+ cp 6 ; T block
+ jr nz, noTRotate
  set csRotateTBit,(hl)
-noTRotateLeft:
+noTRotate:
  res csWallKicked,(hl)
  ld a,(rAttempt)
  cp 4
- jr z,notWallKickedL
+ jr z,notWallKicked
  set csWallKicked,(hl)
-notWallKickedL:
- pop hl
+notWallKicked:
  
  ld a, LOCK_DISABLE
  ld (lockTimer),a
  call checkBlockDownOK
  ret
-noRotationLeft:
+
+noRotation:
  pop hl ;get offset
  
+smcNoRotateRXY=$+1
  ld de,-10
  call calculateRXY ;rxy stored - hl is already at next ofs
 
@@ -1213,7 +1254,7 @@ noRotationLeft:
  inc a
  ld (rAttempt),a
  cp 5
- jp nz, checkBlocksRotateLeft
+ jp nz, checkBlocksRotate
 
  pop hl ;unneeded.
  ld a, LOCK_DISABLE
@@ -1266,140 +1307,6 @@ calculateRXY:
  sbc hl,de ;undo again
  ld (rY), a
  inc hl ;hl is 2 past previous offset ->
- ret
- 
-lineKickRight:
- ld hl, kicksI ;testing
- jr sharedKickRight
- 
-checkRotationRight:
- ld a,(curT)
- cp 3
- ret z
- cp 0
- jr z, lineKickRight
- 
- ld hl, kicksNormal
-sharedKickRight:
- push hl ;save table address
- call getTableOffset ;de=offset
- pop hl ;restore table address
- add hl,de ;offset + table = starting rotation kick
- 
- ld de,10
- call calculateRXY ;hl is up two now, rxy stored
- push hl ;at next offset already
- 
- ld a,0
- ld (rAttempt),a ;there are currently 0 rotation attempts.
- 
- ld hl, curBlock
- ld b,4
-checkBlocksRotateRight:
- ld (rotationTempBC),bc
- ;<x,y> to <y,-x>
- ;get newy=-oldx
- ld a,(hl) ;oldX
- ;neg ;-oldX
- ld e,a ;e=-oldx
- ld a,(rY) 
- add a,e ;rY-oldX = new y location
- cp fieldHeight
- jp nc, noRotationRight ;out of bounds
- ld e,a ;e=new y
- ;get x
- inc hl ;now (hl)=oldY
- ld a,(hl)
- neg
- ld d,a ;d=oldY
- ld a,(rX) ;a=rX
- add a,d ;rX+oldY = new x location
- cp 10
- jr nc, noRotationRight ;also out of bounds
- ld d,a
- ld (rotationTempHL),hl ;save block pointer
- push de
- pop hl ;d,e -> h,l =new coordinates
- call checkBlock
- cp NULL_BLOCK ;check if no block
- jp nz,noRotationRight ;if block, skip rotation
- ld hl,(rotationTempHL) 
- inc hl ;hl is now 2 past offset, to check next block
- ld bc,(rotationTempBC)
- djnz checkBlocksRotateRight
-;rotation is a go
- ld b,4
- ld hl, curBlock
-rotateBlocksRight:
- push bc
- ld a,(hl) ;curBlock x
- ld e,a ;e=new y
- inc hl ;to curblocky ptr
- ld a,(hl)
- neg
- ld d,a
- dec hl ;back to curblockX location
- ld (hl),d ;save new x
- inc hl
- ld (hl),e ;blocks have rotated: now do the next one
- inc hl
- pop bc
- djnz rotateBlocksRight
- pop hl ;unneeded next kick ofs
- 
- ld a,(curR) ;increment angle
- inc a
- and $03 ;keep in bounds
- ld (curR),a
- 
- ld a,(rX)
- ld (curX),a
- ld a,(rY) ;save the location of the successful turn.
- ld (curY),a
- 
- push hl
- ld hl,curStatus 
- ld a,(curT)
- cp 5
- jr nz, noTRotateRight
- set csRotateTBit,(hl)
-noTRotateRight:
- res csWallKicked,(hl)
- ld a,(rAttempt)
- cp 4
- jr z,notWallKickedR
- set csWallKicked,(hl)
-notWallKickedR:
- pop hl
-
- ld a, LOCK_DISABLE
- ld (lockTimer),a
- call checkBlockDownOK
- ret
-noRotationRight:
- pop hl ;get offset
-
- ld de,10
- call calculateRXY ;new rxy stored - hl is already at next ofs
- 
- ld ix,rules
- bit rbitSRSEnabled,(ix+0)
- ret z ;SRS is disabled - do not try again
-
- push hl ;at next offset already 
- ld hl, curBlock
- ld b,4
- 
- ld a,(rAttempt)
- inc a
- ld (rAttempt),a
- cp 5 ;compare rAttempt: if 5 attempts have hit do not jump back
- jp nz, checkBlocksRotateRight
- 
- pop hl ;unneeded.
- ld a, LOCK_DISABLE
- ld (lockTimer),a
- call checkBlockDownOK
  ret
  
 checkMoveRight:
@@ -1542,6 +1449,7 @@ checkBlock:
 copyBlockData:
  push af ;ld d,a ;save d for later
  ld hl, blockData
+ dec a
  add a,a ;x2
  add a,a ;x4
  add a,a ;x8
@@ -1563,478 +1471,123 @@ copyBlockData:
  ld bc, blockGraphicSize
  ldir
  ret
- 
-;initialize 8bpp mode and palette
-initLCD:
- call _RunIndicOff
- 
-;intiialize palette from data
- ld hl, (drefPalette)
- ld de, $e30200
- ld bc, 512 ;undefined colors likely never used
- ldir
-  
- ld hl, lcdBpp8 | lcdPwr | lcdBgr | lcdIntFront
- ld (mpLcdCtrl),hl
- ;following change based on ;https://www.cemetech.net/forum/viewtopic.php?t=13695&start=0
- ld a,4
- ld (mpLcdIcr),a
- 
-clearLCD:
- ld hl, vRam
- ld de, vRam+1
- ld bc, vRamEnd - vRam
- ld (hl),0
- ldir
+
+randsav:
+ .db 0,0,0,0
+randbag:
+ .db 0,0,0,0,0,0,0 ;7 slots for the 7 pieces
+randbag2:
+ .db 0,0,0,0,0,0,0 ;backup bag for next 7
+RANDOM_NULL = 0 ;empty slot
+
+getNextBagItem:
+ ld a,(randbag) ;get first item
+ push af
+ ld hl,randbag+1
+ ld de,randbag
+ ld bc,13
+ ldir ;slide all previous items up in queue
+ ld hl,randbag2 + 6
+ ld (hl),RANDOM_NULL
+ ld a,(randbag2)
+ cp RANDOM_NULL ;check that randbag2 is not empty
+ ld hl,randBag2
+ call z,randFillBag ;if the bag is empty, fill it.
+ pop af
  ret
 
-;return lcd to normal state (bpp16)
-resetLCD:
-;set default vram ptr
- ld hl,vRam
- ld (mpLcdUpbase),hl
+initBag:
+ call randInit
  
- ld hl, lcdNormalMode
- ld (mpLcdCtrl), hl
- call _ClrLCDFull
- call _DrawStatusBar
- ret
-
-;swaps ptrs between two vram buffers.
-;this is for double-buffering and preventing
-;flicker/tears/etc.
-vramOnPtr:
- .dl vRam
-vramOffPtr:
- .dl vRamSplit
- 
-swapVRamPTR:
- ld de,(vramOffPtr)
- ld (mpLcdUpbase),de
- 
-swapVRamPTRNoDisp:
- ld hl,(vramOnPtr)
- ld de,(vramOffPtr)
- ld (vramOnPtr),de
- ld (vramOffPtr),hl
- 
-;also modified based on
-;https://www.cemetech.net/forum/viewtopic.php?t=13695&start=0
-waitLCDRIS:
- ld hl, mpLcdIcr
- set bLcdIntLNBU, (hl)
- ld l, mpLcdRis & $FF
-wr:
- bit bLcdIntLNBU, (hl)
- jr z, wr
+ ld hl, randbag
+ call randFillBag
+ ld hl, randbag2
+ call randFillBag
  ret
 
 ;input:
-;a = color
-;de = x
-;l = y
-;b = sizey
-;c = sizex
-;clears a square area with the color in a 
-;note: preserves coords, sizexy
-;this is so it can be used with sprites
-clearSprite:
+;hl= ptr to bag to fill 
+randBagPtr:
+ .db 0,0,0 ;save ptr to bag here
+randCountFail:
+ .db 0
+randFillBag: 
+ ld b,7
+ ld (randBagPtr),hl
+randFillLoop:
+ push bc
  push hl
- push de
- push bc
- push de
- ld h,0
- ld d,0 ;save HL = Y
- ld e,l
- add hl,hl ;2y
- add hl,hl ;4y
- add hl,de ;5y
- add hl,hl ;10y
- add hl,hl ;20y
- add hl,hl ;40y
- add hl,hl ;80y
- add hl,hl ;160y
- add hl,hl ;320y
- pop de
- add hl,de ;320Y+X
- ld de, (vramOffPTR) ;to second half of vRam, for double-buffering
- add hl,de ;320Y+x+vRam
- 
- ld de,320
-putClearYLoop:
- push bc
- ld b,c
- push hl ;save ptr to graph
-putClearXLoop:
- ld (hl),a
- inc hl
- djnz putClearXLoop
- pop hl
- add hl,de ;move down 1 y unit
- pop bc
- djnz putClearYLoop
- pop bc
- pop de
- pop hl
- ret
- 
-;h=bpp id
-drawSpriteCustomBPP:
- push hl
- push de
- ld de,0
- ld e,h
- ld hl,ppbpp+1 ;past jp
- add hl,de
- add hl,de
- add hl,de
- add hl,de ;hl = ppbpp+1 + 4*bppid
- ld de,(hl) ;get ppbpp data
- ld hl,smcPutPixel+1
- ld (hl),de ;put ppbpp data to call
- pop de
- pop hl
- jr drawSpriteSetBPP
-;inputs: 
-;ix = spritedataptr
-;de = x
-;h = bpp id
-;l = y
-;b = sizey
-;c = sizex (note: BYTES not PIXELS)
-;a = spritePalette
-drawSprite:
- push de
- ld de, putPixel8bpp
- ld (smcPutPixel+1),de
- pop de
-drawSpriteSetBPP:
- bit 2, h
- jr z, noScale
- srl b ;half sizey
-noScale:
- push de
- ld de,0
- ld d,l
- ld e,0
- ld hl,0
- add hl,de ;add 256L
- srl d
- rr e
- srl d
- rr e
- add hl,de ;add 64L: 320L total 
- pop de ;is this better than below? idk
- ;push de
- ;ld h,0
- ;ld d,0 ;save L = Y
- ;ld e,l
- ;add hl,hl ;2y
- ;add hl,hl ;4y
- ;add hl,de ;5y
- ;add hl,hl ;10y
- ;add hl,hl ;20y
- ;add hl,hl ;40y
- ;add hl,hl ;80y
- ;add hl,hl ;160y
- ;add hl,hl ;320y
- ;pop de
- add hl,de ;320Y+X
- ld de, (vramOffPtr) ;to second half of vRam, for double-buffering
- add hl,de ;320Y+x+vRam
-;hl=vramptr ix=data b=sizeY c=sizeX a=pal 
-putSpriteYLoop:
- push bc
- ld b,c ;size x still
- push hl ;save ptr to graph
-putSpriteXLoop:
- push bc
-smcPutPixel: ;add 1 for CALL address
- call 0 ;ppbpp + something
- pop bc
- djnz putSpriteXLoop
- pop hl
- ld de,320
- add hl,de ;move down 1 y unit
- pop bc
- djnz putSpriteYLoop
- ret
-
-ppbpp:
- jp putPixel1bpp
- jp putPixel2bpp
- jp putPixel4bpp
- jp putPixel8bpp
- jp put1bppHalfScale
- jp put2bppHalfScale
- jp put4bppHalfScale
- jp put8bppHalfScale
-
-;a=pal
-;ix=data ptr
-;hl=vram ptr
-putPixel8bpp:
- ld b,a ;b=palette
- ld a,(ix+0) ;pixel color
- cp 0 ;check if no color/transparent color
- jp z,transPixel8
- add a,b ;add color to palette ofs
- ld (hl),a
-transPixel8:
- ld a,b
- inc ix ;sprite data index
- inc hl ;coords
- ret
-
-put8bppHalfScale:
- ld e,a ;e=palette
- ld a,(ix+0) ;pixel color
- cp 0 ;check if no color/transparent color
- jp z,transPixel8h
- add a,e ;add color to palette ofs
- ld (hl),a
-transPixel8h:
- inc ix ;sprite data index
- inc ix
- inc hl ;coords
- 
- ld a,1
- cp b
+randTryAgain:
+ call rand
  ld a,e
- ret nz ;return if not last x loc
- ;c is still the width of X
- ld de,0
- ld e,c ;add byte width to ix to skip next row
- add ix,de
- ret
- 
-;a=pal
-;ix=data ptr
-;hl=vram ptr
-putPixel4bpp:
- ld c,a ;save palette ofs
- ld b,(ix+0) ;get data
- ld a,b
- and $F0 
- rrca
- rrca
- rrca
- rrca ;shift to lower bits
- cp 0
- jr z, noPut1stPixel
- add a,c ;add palette ofs to color
- ld (hl),a ;load first nibble + palette ofs
-noPut1stPixel:
- inc hl ;next coord
- 
- ld a,b ;data again
- and $0F 
- cp 0
- jr z,noPut2ndPixel
- add a,c ;add palette and color
- ld (hl),a
-noPut2ndPixel:
- inc hl ;next coord
- inc ix ;next data chunk
- ld a,c
- ret
-
-put4bppHalfScale:
- ld d,a ;save palette ofs
- ld a,(ix+0)
- srl a
- srl a
- srl a
- srl a
- cp 0
- jr z, noPutPixelh
- add a,d ;add palette ofs to color
- ld (hl),a ;load nibble + palette ofs
-noPutPixelh:
- inc hl ;next coord
- inc ix ;next data chunk
- 
- ld a,1
- cp b
- ld a,d
- ret nz ;return if not last x loc
- ;c is still the width of X
- ld de,0
- ld e,c ;add byte width to ix to skip next row
- add ix,de
- ret
- 
-;a=palette ofs
-;hl=vram ptr
-;ix=data ptr
-putPixel2bpp:
- ld d,a ;save palette ofs
- ld c,(ix+0)
- ld b,4
-putPixel2bit:
- xor a ;a=0
- rlc c
- rla
- rlc c
- rla ;get 2 bits from c into a
- cp 0
- jr z, trans2bit
- add a,d ;add pal and ofs
- ld (hl),a
-trans2bit:
+ and $07
+ cp RANDOM_NULL
+ jr z, randTryAgain ; seven is not an OK random number
+ ld b, 7
+ ld hl, (randBagPtr)
+randCheckLoop:
+ cp (hl)
+ jr z, randTryAgain
  inc hl
- djnz putPixel2bit
- inc ix
- ld a,d
- ret
- 
-put2bppHalfScale:
- push bc
- ld d,a ;save palette ofs
- ld e,(ix+0)
- ld b,2
-putPixel2h:
- xor a ;a=0
- rlc e
- rla
- rlc e
- rla ;get 2 bits from c into a
- rlc e
- rlc e ;skip next 2 bits
- cp 0
- jr z, trans2h
- add a,d ;add pal and ofs
- ld (hl),a
-trans2h:
- inc hl
- djnz putPixel2h
- inc ix
+ djnz randCheckLoop
+ pop hl
+ ld (hl),a ;value is good; save
+ inc hl ;next item
  pop bc
+ djnz randFillLoop
+ ret
 
- ld a,1
- cp b
- ld a,d
-
- ret nz ;return if b!=1
- ld de,0
- ld e,c
- add ix,de
+randseed:
+ .db 0,0,0
+randinput:
+ .db 0
+ 
+;initialize random stuff
+randInit:
+ ;init randseed
+ ld a,r
+ ld (randseed),a
+ ld a,r
+ add a,42
+ ld (randseed+1),a
+ 
+ ;init bags with RANDOM_NULL
+ ld hl, randbag
+ ld de, randbag+1
+ ld bc, 13
+ ld (hl), RANDOM_NULL
+ ldir
  ret
  
-;a=palette ofs
-;ix=data ptr
-;hl=vram ptr
-putPixel1bpp:
- ld c,(ix+0)
- ld b,8
- ;new:
- ;c=bit data
- ;b=pixel count
-putPixelBit:
- rlc c ;get bit from c
- ;if bit is zero, pixel is transparent.
- jr nc, noPutPixelBit ;skip to inc location
- ld (hl),a ;save to location
-noPutPixelBit:
- inc hl ;next
- djnz putPixelBit
- inc ix ;done with this byte of data
+
+;generates a random 16-bit nubmer
+;galosis LFSR, based on wikipedia page
+;en.wikipedia.org/wiki/Linear-feedback_shift_register
+;Just read the wikipedia page.
+;This version is a slightly modified version of a bugged z80 version I created a few years ago.
+rand:
+ ld de,(randseed)
+ ld a,(randinput)
+ bit 0,a
+ call nz,randXOR
+ ld a,(randinput)
+ ld l,a
+ push hl
+ pop af
+ rr d
+ rr e
+ push af
+ pop hl
+ ld a,l
+ ld (randinput),a
+ ld (randseed),de
  ret
- 
-put1bppHalfScale:
- push bc
- ld c,(ix+0)
- ld b,4
- ;new:
- ;c=bit data
- ;b=pixel count
-putPixelBith:
- rlc c ;get bit from c
- ;if bit is zero, pixel is transparent.
- jr nc, noPutPixelBith ;skip to inc location
- ld (hl),a ;save to location
-noPutPixelBith:
- inc hl ;next
- rlc c
- djnz putPixelBith
- inc ix ;done with this byte of data
- pop bc
- 
+randXOR:
+ ld a,%10110100 ;this is the ideal set of bits to invert for a maximal cycle, apparently. (for 16 bits anyway)
+ xor d
  ld d,a
- ld a,1
- cp b
- ld a,d
-
- ret nz ;return if b!=1
- ld de,0
- ld e,c
- add ix,de
  ret
  
-;input: h
-;destroys: b
-;output: c = 1 << h
-getBPPFromID:
- ld b,h
- inc b
- ld c,$01
-shiftLoop:
- rlc c
- djnz shiftLoop
- rrc c
- ret
-
- ;draws a block from coords + set tSpriteId, tSpritePAL
- ;no bounds check 
- ;accepts (DE, L) as coordinates
- ;still needs tSpriteID and tSpritePAL
-
- ;drawOneBlockHalfScale: 
- ;ld ix, smcScaleBPP
- ;set 1,(ix+1)
- ;jr drawOneBlockShared
- 
-drawOneBlockNoGrid:
- ;ld ix, smcScaleBPP
- ;res 1,(ix+1)
- ;jr drawOneBlockShared
-
-;drawOneBlockShared:
- ld ix, (drefSprite)
- ld h, (ix) ;get bpp
- inc ix
- ld bc,0
- call getBPPFromID
- ;h = bpp id
- ;c = bpp #
- 
- ld a, (tSpriteID)
- ld b,144
- mlt bc ;12 * 12 * c
- srl b
- rr c
- srl b
- rr c 
- srl b
- rr c ;144 * c / 8 where c is in [1,2,4,8]
- ;therefore, c<256 and b can be mlt'd again
- ld b, a
- mlt bc ;spritedatasize*spriteID
- add ix,bc
- 
- ld c,12 ;width in BYTES
- ld b,h
- inc b
-divideByBPP:
- rrc c
- djnz divideByBPP
- ld b,12
- ld a, (tSpritePAL)
- ;smcScaleBPP:
- ;res 3, h ;default is res: smc to SET if half
- call drawSpriteCustomBPP
- ;pop hl ;restore old coordinates
- ret
  
 drawGame:
  ld ix,(drefIInfo)
@@ -2183,1548 +1736,264 @@ drawNewMino:
  call drawPTRMino
  ret
  
-;input: ix = info ptr, 1st elem. is # struct elems
-drawObjects:
- ld a,$00 ;nop
- jr drawObjs
-drawObjectsNoReset:
- ld a,$C9 ;ret
- ;jr drawObjs
-
-drawObjs:
- ld (smcRedrawReset),a
- ld b,(ix)
- inc ix 
-drawAllObjects:
- push bc
- ;ix = info ptr
- call drawObject
- 
- ld de,iDataSize
- add ix,de
- pop bc
- djnz drawAllObjects
- ret
-
-;ix = info ptr, 
-resetAllDrawCheck:
- ld b,(ix)
- inc ix
- ld de,iDataSize
-resAllObjects:
- res redrawObjBit,(ix+iDataType)
- add ix,de
- djnz resAllObjects
- ret
- 
-drawObjectNoReset:
- ld a,$c9 ;ret = $c9
- ld (smcRedrawReset),a
-;input: ix = data ptr to object
-;note: only sets 7st bit
-drawObject:
- push ix
- call drawObjectJump
- pop ix
- ;cleanup from drawing object
-smcRedrawReset:
- ret ;either ret (no set) or nop (set)
- 
- set redrawObjBit,(ix+iDataType)
- ret
- 
-drawObjectJump:
- ld de,0
- ld e, (ix+iDataType) ;e is data type
- sla e
- ret c ;return if already drawn
- sla e
- 
- ld hl,drawJumps
- add hl,de ;jumps + 4e (since e is already *4 from 2x sla e)
- 
- jp (hl)
- ret ;implied return from any of the jump methods
- 
-;jump table for various object types
-;all should accept ix as a pointer to data
-drawJumps:
- jp 0; drawField 
- jp drawText
- jp draw24BitNumber
- jp drawSpriteObject
- jp drawCurrentHold
- jp drawPreview
- jp drawBox
- jp drawMenu
- ld h,sp8bpp
- jr sharedDSO
- ld h,sp4bpp
- jr sharedDSO
- ld h,sp2bpp
- jr sharedDSO
- ld h,sp1bpp
- jr sharedDSO
- jp draw8BitNumber
- jp 0 ;undefined
- jp drawCustom
- jp drawMap
- ret ;this one is just aesthetic
- 
-sharedDSO:
- jp drawSpriteObj
-
-drawCustom:
- ld hl,(ix+iDataPTR)
- 
- jp (hl) ;the rest is up to special drawing code
-  
-drawMinoTempDE:
- .db 0,0,0
-dmX:
- .db 0
-dmY:
- .db 0
-dmOX:
- .db 0,0
-dmOY:
- .db 0
-
-drawCurrentHold:
- push ix ;save data ptr
- ld ix,rules
- bit rbitHoldEnabled,(ix+0)
- pop ix ;restore data ptr/stack
- ret z ;hold is disabled
- 
- ld a,0
- ld (tSpriteID),a
- ld (tSpritePAL),a
- 
- ld b,(ix+iDataH)
-drawHoldY:
- push bc
- ld c,b
- ld b,(ix+iDataW) ;(b,c) = (w,h)
-drawHoldX:
- push bc
- ld h,b
- dec h
- ld l,c
- dec l
- ld e,h ;save e=x
- ld h,(ix+iDataA)
- mlt hl ;hl = 12*y implies l=12*y since y<20
- ld d,(ix+iDataA)
- mlt de ;de = 12*(x + xOfs)
- ;(de, l) are the coordinates
- ;now, layout offset must be added.
- ld a,(ix + iDataXL)
- add a,e
- ld e,a  ;12x+ layoutOfsX
- ld a,(ix + iDataXH)
- adc a,d ;add high byte x ofs - include carry for completeness
- ld d,a
- ld a,(ix + iDataY)
- add a,l ;no bounds check! careful!
- ld l,a
-
- push ix ;preserve data ptr
- call drawOneBlockNoGrid
- pop ix ;restore data ptr
- pop bc
- djnz drawHoldX
- pop bc
- djnz drawHoldY
-
- ld a,(holdT)
- cp NULL_BLOCK
- ret z ;don't draw if it's empty!
-
- ld a,12
- add a,(ix+iDataY)
- 
- ld hl,curStatus
- bit csUsedHold,(hl)
- ld l,a ;y+12 to center in hold box
- ld de,0
- ld d,(ix+iDataXH)
- ld e,(ix+iDataXL)
- ld h,0 ;no special settings for hold
- jr z,holdUnused
- ld h, 1<<drawMinoDark
-holdUnused:
- 
- ld a,(holdT)
- jp drawMinoFromType
- 
-drawPreview:
- ;ix is data ptr
- push ix
- ld ix,rules
- bit rbitPreviewEnabled,(ix+0)
- pop ix ;restore data ptr
- ret z ;preview is disabled
- 
- push ix
- ld ix,(ix+iDataXL)
- ;ld d,(ix+iDataXH)
- ;ld e,(ix+iDataXL)
- ;ld ix,SSS
- ;add ix,de
- res redrawObjBit,(ix+iDataType)
- call drawObject
- pop ix
- 
- ld hl,(ix+iDataPTR)
- ;hl = ptr to extra coords
- 
- ld de,randBag
- ld b,(ix+iDataW)
-drawAllPreviewMinos:
- push bc
- ld a,(de) ;get preview minotype
- 
- ld b,a
- inc de
- push de
- 
- ld de,0
- ld e,(hl)
- inc hl
- ld d,(hl) ;de = x
- inc hl
- ld a,(hl)
- inc hl
- push hl ;save ptr to coords
- 
+;inputs:
+;a=type
+;ix=map data
+;return:
+;hl=blockdata
+;destroys:
+;de
+getMinoBlockData:
+ ld de,blockData
  or a,a
  sbc hl,hl
- ld l,a ;a -> l = y
- ld h,1 << drawMinoHalf
- ld a,b ;get preview minotype again
- 
- 
- call drawMinoFromType
- pop hl
- pop de
- pop bc
- djnz drawAllPreviewMinos
+ ld l,a
+ add hl,hl ;2
+ add hl,hl ;4
+ add hl,hl ;8*type 
+ add hl,de ;ptr to blockdata
  ret
- 
-blockDataPTR:
- .dl 0 
- 
-multABy12ToBC:
- bit 7,a
- ld bc,0
- jr z,noSignExtendBC
- dec bc
-noSignExtendBC:
- ld c,a ;x 
- add a,a ;2*x
- add a,c ;3*x
- add a,a ;6*x
- add a,a ;12*x
- ld c,a ;12x
- ret
-
-;input:
-;a = type
-;output:
-;a = pal
-;ix = sprdata ptr
-;h = sprdata bpp
-;(blockDataPTR)
-getMinoGraphic:
- ld de,0
- add a,a
- ld e,a ;de=type*2
- ld hl,(drefBlocks)
- add hl,de ;hl points to sprite and palette info
- ld a,(hl) ;a=sprite id
- inc hl ;to palette info
- ld d,(hl) ;d=palette
-  
- ld ix,(drefSprite)
- ld h,(ix) ;save bpp
- inc ix
- call getBPPFromID
- ;h=bpp id
- ;c=bpp
- 
- ld b,18 ;sprite 1bpp size 12x12 sprite
- mlt bc ;144 * c / 8 -> 18 * c, c in [1,2,4,8]
- ;therefore c<256
- ld b,a
- mlt bc ;spritedatasize*spriteID
- add ix,bc ;add to sprite data: ix is spdata ptr
- 
- ld b,h ;save bpp
- ld a,d ;restore palette
- ;calculate block data ptr
- ld d,0
- ld hl,blockData
- add hl,de ;2
- add hl,de ;4
- add hl,de ;6
- add hl,de ;8x type + blockdata
- ld (blockDataPTR),hl
- ld h,b
- 
- ;h = bpp
- ;a = palette
- ;ix = sprdata
- ;(blockDataPTR)
- ret
- 
-;input:
-;de = x
-;l = y
-
-drawNullMinoBlock:
-smcDNMB_ix=$+2
-smcDNMB_a=$+6
- ld ix,0
- ld a,0
- jr skipDMBixa
-drawMinoBlock:
-smcDMB:
- ld ix,0
- ld a,0
-skipDMBixa:
- ld h,0
- ld c,0
- ld b,0
- call drawSpriteCustomBPP
- ret
-smcDMB_ix = smcDMB + 2
-smcDMB_a = smcDMB + 6
-smcDMB_h = smcDMB + 8
-smcDMB_c = smcDMB + 10
-smcDMB_b = smcDMB + 12
 
 ;inputs:
+;ix= map data ptr
 ;de= x
 ;l = y
 ;h = settings
 ;a = type
 drawMinoFromType:
+;set coordinates of mino
+ ld c,a
+ ld (minoBlockBaseX),de
+ ld a,l
+ ld (minoBlockBaseY),a
+ ex de,hl
+;d=setting
  push de
- push hl
- call getMinoGraphic
- ld (smcDMB_ix),ix
- ld (smcDMB_a),a
- ld a,h
- pop hl
- bit drawMinoHalf,h
- jr z,notHalfBPP
- set 2,a ;set "half scale" bit
-notHalfBPP:
- ld (smcDMB_h),a
- res 2,a
- ld d,h ;save settings to d
- ld h,a
- 
- ld c,12
- ld b,h
- inc b
-divideByBPPdmft:
- rrc c
- djnz divideByBPPdmft
- 
  ld a,c
- ld (smcDMB_c),a ;pixel width
- ld a,12
- ld (smcDMB_b),a ;pixel height
- ld h,d ;restore setting
- pop de
- xor a
- inc a
- ld (smcDMBs_xOfs),a ;1 = grid x offset 
- ld (smcDMBs_yOfs),a ;also 1 = y offset 
+ call getMinoBlockData
+ pop de 
+ push hl
+ push af
+ ; requires ix, d
+ call drawMinoWriteC
+ pop af ;a = type
+ pop hl ;hl = blockdata
+;ix = map data ptr
+;d = settings
+ jp drawMinoManualBlockData
  
- ;at this point, graphical data has been set
- ;except:
- ;h = settings
- ;l = y
- ;de= x
- ;this will be modifed in loop, using blockDataPTR
- jr drawMinoBlocksLoopBegin
- 
+; Key:
+; [M] - modified by drawMino once
+; [L] - modified by drawMino in loop
+; [C] - constant (could be optional)
+minoBlockObj:
+ .db typeSprite2bpp ;[C] set from sprite data
+ .dw 0 ;[L] x coordinate (px)
+ .db 0 ;[L] y coordinate (px)
+ .db 0 ;[M] palette
+ .dl 0 ;[M] pointer to block sprite data
+ .db 3, 12 ;[C] width (bytes), [C] height (pixels)
+minoBlockBaseX:
+ .dl 0 ;[M] x coordinate of mino (pixels)
+minoBlockBaseY:
+ .dl 0 ;[M] y coord (pixels)
+
 ;inputs:
-;ix= obj data ptr
-;de= curdata ptr
-;h = settings
-drawMinoFromData:
- ;push ix
- ex de,hl ;hl = curdata ptr, d=settings
- ld a,(hl) ;get x grid ofs
- ld (smcDMBs_xOfs),a
- inc hl
+;ix = obj data ptr (map/field data)
+;de = curdata ptr
+;h = settings 
+drawMinoObject:
+ ex de,hl;d=settings
+ push hl ;hl=curdata
+ call drawMinoWriteC
+ pop hl
+ call drawMinoWriteBaseXY
+ jp drawMinoWriteM
  
- ld a,(hl) ;get y grid ofs
- sub fieldHeight - 20
- ld (smcDMBs_yOfs),a
- inc hl ;past y
- 
- ;past curR,T,Status
- inc hl
- ld a,(hl) ;type
- inc hl
- inc hl
-
- push hl ;blockDataPTR
- push ix
- push de ;d=settings
- call getMinoGraphic
- pop de ;d=settings
- 
- ld (smcDMB_ix),ix
- ld (smcDMB_a),a
- 
- pop ix
- bit drawMinoHalf,d
- jr z,noHalfScale
- set 2,h
-noHalfScale:
- ld a,h 
- ld (smcDMB_h),a
- 
- res 2,a
- ld h,a
- 
+;write to minoBlockObj all [C] values
+;requires: ix, d
+;preserves d
+drawMinoWriteC:
+ ld hl,(ix+iExtTile)
+ ld a,(hl)
+ bit drawMinoHalf, d
+ jr z,notDrawMinoHalf
+ set spHalf, a ; set the half-scale bit of the bpp setting 
+notDrawMinoHalf:
+ ld (minoBlockObj),a
+ and $03
+ ld b,a
  ld a,(ix+iDataA)
- ld c,a 
- ld (smcDMB_b),a
- ld (smcDMBs_tx),a
- ld (smcDMBs_ty),a
- ld b,h
- inc b
-divideByBPPdmfd:
- rrc c
- djnz divideByBPPdmfd
- bit drawMinoHalf,d
- jr z,noHalfAdjust
- rrc c
-noHalfAdjust:
- 
- ld a,c
- ld (smcDMB_c),a
- 
+ call getBlockSizeBytes
+ ld hl,minoBlockObj+iDataW
+ ld (hl),a ;size (bytes)
+ inc hl
+ bit drawMinoHalf, d
+ jr z,notDrawMinoHalfC
+ srl c
+notDrawMinoHalfC:
+ ld (hl),c ;size (pixels)
+ ret
+
+;write minoBlockBase coordinates [M]
+;requires: ix=map obj, hl=curdata
+drawMinoWriteBaseXY:
+ push hl ; will need it again
+;ld c,(ix+iDataA) ;tile size (px) (kept from above)
+ ld b,(hl) ; curX (tile)
+ mlt bc ; curX (px)
+ or a,a
+ sbc hl,hl
+ ld l,(ix+iDataXL)
+ add hl,bc
+ ld (minoBlockBaseX),hl ; fieldX + curX (pixels)
  pop hl
- ld (blockDataPTR),hl
- ex de,hl ;settings in h
- 
- ;pop ix
+ inc hl ;advance to curY
+ push hl ;curData+1 ptr (save for later)
+ ld a,(hl)
+ add a,(ix+iDataH)
+ sub fieldHeight
+ ld b,a ; curY - fieldHeight + fieldDrawHeight (tiles)
+ ld c,(ix+iDataA)
+ call multiplyBCSigned
+ or a,a
+ sbc hl,hl
  ld l,(ix+iDataY)
- ld de,0
- ld d,(ix+iDataXH)
- ld e,(ix+iDataXL)
- ld a,(ix+iDataW)
- ld (smcDMBs_w),a
- ld a,(ix+iDataH)
- ld (smcDMBs_h),a
- 
- ;jr drawMinoBlocksLoopBegin
- 
-drawMinoBlocksLoopBegin:
- bit drawMinoErase,h
- jr z,noErase
- xor a
- ld (smcDMB_a),a
- ld ix,(drefSprite)
- inc ix ;past bpp
- ld (smcDMB_ix),ix
-noErase:
- bit drawMinoDark,h
- jr z,noDark
- ld ix,smcDMB_a
- ld a,32
- add a,(ix)
- ld (ix),a
-noDark:
- 
- ld b,4
-drawMinoBlocksLoop:
- push bc
- push de
- push hl
- 
- ld bc,(blockDataPTR)
- ld a,(bc)
- inc bc
- ld (blockDataPTR),bc
-
-smcDMBs_xOfs = $ + 1
- add a,0
-smcDMBs_w = $ + 1
- cp 10 ;if it goes past 10, it's out-of-field
- jr nc, skipDMB
-  
- ld c,a
-smcDMBs_tx = $ + 1
- ld b,12
- mlt bc
- ;call multABy12ToBC
- bit drawMinoHalf,h
- jr z,noHalfDMBx
- srl b ;half multiplied value
- rr c ;
-noHalfDMBx:
- ;12x -> bc (or 6x if half-scale)
- ex de,hl ;hl=x
- add hl,bc ;add xofs
- ex de,hl ;hl=settings/y again de=x
- 
- ld bc,(blockDataPTR)
- ld a,(bc)
- inc bc
- ld (blockDataPTR),bc
-
-smcDMBs_yOfs = $ + 1
- add a,0
-smcDMBs_h = $ + 1
- cp 20 ;if it goes past 20, it's out-of-field
- jr nc, skipDMB
- 
- ld c,a
-smcDMBs_ty = $ + 1
- ld b,12
- mlt bc
- ld a,c
- ;call multABy12ToBC
- bit drawMinoHalf,h
- jr z,noHalfDMBy
- srl a ;half multiplied value
-noHalfDMBy:
- ;12y->bc,a
- add a,l ;add ofs to y ofs
- ld l,a
- 
- ;de = x
- ;l = y
- 
- call drawMinoBlock
-skipDMB:
- pop hl
- pop de
- pop bc
- djnz drawMinoBlocksLoop
+ add hl,bc
+ ld (minoBlockBaseY),hl ; fieldY + curY (pixels)
+ pop hl ;curY
  ret
  
+;write minoBlockObj [M] values
+;requires: ix, hl=curY, d
+drawMinoWriteM:
+ inc hl ;curR
+ inc hl ;curT (mino type)
+ ld a,(hl)
+ inc hl ;curStatus
+ inc hl ;curBlock
+
+;requires: ix, hl=blockdata, a=type, d=settings
+drawMinoManualBlockData:
+ push hl ;now points to blockData
+ ;check if draw null blocks instead
+ bit drawMinoErase, d
+ jr z,notErase
+ xor a ; a=0 -> null block
+notErase:
+ ld hl,(ix+iExtTileset)
+ ld bc,0
+ ld c,a
+ add hl,bc
+ add hl,bc ;pointer to sprite/palette pair
+ ld e,(hl) ;sprite index
+ inc hl
+ ld a,(hl) ;palette
+ ld (minoBlockObj+iDataA),a
+ ld c,(ix+iDataA) ;height (px)
+ ld a,(minoBlockObj+iDataW) ;width (bytes)
+ ld b,a
+ mlt bc ;single sprite size (bytes, assume <256)
+ ld b,e
+ mlt bc ;multiply by index
+ ld hl,(ix+iExtTile)
+ inc hl
+ add hl,bc ;ptr to sprite data
+ ld (minoBlockObj+iDataPTR),hl
+ pop hl
+ 
+ bit drawMinoDark, d
+ jr z,notDark
+ ld a,32 ;TODO: make flexible?
+;Alternate TODO: set darkBit, (ix+iDataA) ;?
+ add a,(ix+iDataA)
+ ld (ix+iDataA),a
+notDark:
+ ld b,4 ;number of blocks (TODO make flexible)
+
+;ix = map data ptr
+;hl = blockdata ptr
+;d = settings
+;b = number of blocks in blockdata
+;at this point, we have set the constants of minoBlockObj and BaseX, BaseY
+drawMinoBlocks:
+ push bc
+ ld b,(hl) ;blockXOffset (tiles)
+ inc hl
+ ld d,(hl) ;blockYOffset (tiles)
+ inc hl
+ push hl
+; ld a,(ix+iDataW)
+; cp b ; a - b < 0 --> c set, b > a (out of bounds in x)
+; jr c,dMBOutOfBounds
+ ld c,(ix+iDataA)
+ ld e,c
+ call multiplyBCSigned
+ ld hl,(minoBlockBaseX)
+ add hl,bc ;fieldX + minoX + blockX
+ ld (minoBlockObj+iDataXL),hl ;overwrites y but it doesn't matter as we set it next
+ 
+; ld a,(ix+iDataH)
+; cp d ; a - d < 0 --> c set, d > a (out of bounds in y)
+; jr c,dmbOutOfBounds
+ ld c,e
+ ld b,d
+ call multiplyBCSigned
+ ld hl,(minoBlockBaseY) ;TODO: make minoBlockBaseY inline
+ add hl,bc
+ ld a,l ;only valid y <256
+ ld (minoBlockObj+iDataY),a
+ 
+ bit 7,h ;check sign
+ jp nz, dMBOutOfBounds ;no negative coordinates
+ 
+ push ix
+ ld ix,minoBlockObj
+ call drawObjectNoReset
+ pop ix 
+ 
+dMBOutOfBounds:
+ pop hl
+ pop bc
+ djnz drawMinoBlocks
+
+;input:
+;b,c = multiply, b is signed
+;destroy:
+;a,hl if negative
+multiplyBCSigned:
+ bit 7,b
+ jr z,positiveBC
+negativeBC:
+ ld a,b
+ neg
+ ld b,a
+ mlt bc ;positive b*c
+ or a,a
+ sbc hl,hl
+ sbc hl,bc ; -bc
+ push hl
+ pop bc
+ ret
+positiveBC:
+ mlt bc
+ ret
+
 ;requires ix as obj data ptr
 ;de as setDataFromPTR ptr to curdata etc
 ;also, nice
 nullPTRMino:
- ld h,1
- call drawMinoFromData
+ ld h,1<<drawMinoErase
+ call drawMinoObject
  ret
  
 ;ix = obj data ptr
 ;de = setDataFromPTR ptr
 drawPTRMino:
  ld h,0
- call drawMinoFromData
- ret
- 
-drawTextColor:
- .db 0
-drawTextBG:
- .db 0
-
-;inputs: ix = data ptr
-drawText:
- ld hl,(ix+iDataPTR)
- push hl
- 
- ld de,0
- ld e,(ix+iDataXL)
- ld d,(ix+iDataXH)
- ld hl,0
- ld l,(ix+iDataY) ;xy set
- ld a,(ix+iDataA) ;color
- ld c,(ix+iDataH) ;bg color 0=transparent
- pop ix ;this is now the string data ptr
-
- ;must be provided:
- ;ix - string data ptr
- ;hl - y
- ;de - x
- ;a - color
- ;c - bg color
-drawTextManual:
- ld (drawTextColor),a
- ld a,c
- ld (drawTextBG),a
-drawTextLoop:
- ld a,(ix)
- cp 0 ;check null-terminated string
- jr z,textLoopEnd ;end string before stuff on stack
- push ix ;string data ptr
- push hl
- push de
-
- ;a = ofs
- sub 32 ;ascii adjust
- ld ix,(drefFont)
- ld h,(ix) ;bpp
- inc ix ;ix points to fontdata
- ld bc,0
- ld b,h
- inc b
- ld c,$08
-shiftCTXT:
- rlc c
- djnz shiftCTXT
- rrc c
- ;c=2^bpp*8
- ld b,a
- mlt bc ;bc = spdatasize * ofs
- 
- add ix,bc ;fontData + 64a (character)
-
- ld b,8
- ld c,8 ;size in PIXELS of char BACKGROUND width
- 
- ld a,(drawTextBG)
- cp 0
- jr z,textTransBG
- push hl
- call clearSprite
- pop hl
-textTransBG:
- ld a,(drawTextColor)
- ld b,h
- inc b
- ld c,$80
-shiftLoopC:
- rlc c
- djnz shiftLoopC ;c is sprite width in BYTES
- ld b,8 ;sprite height
- ;h is bpp, l=y, de=x, ix=spdata
- call drawSpriteCustomBPP
- pop hl ;de, x coords
- ld de,8
- add hl,de ;add 8
- push hl
- pop de ;de = x+8
- pop hl ;y value (shouldn't change)
- pop ix ;string data ptr
- inc ix
- jr drawTextLoop
-textLoopEnd:
- ;de is the ending X location
- ;hl is unchanged
- ;ix points to 0 at end of string
- ;a is 0
- ret
- 
-;inputs: ix = data struct
-drawNumString:
-.db 0,0,0,0,0,0
-.db 0,0,0,0,0,0 ;12 bytes max
-.db 0
-draw8BitNumber:
- ld hl,(ix+iDataPTR)
- ld a,(hl)
- or a,a
- sbc hl,hl
- ld l,a ;hl = number
- ;jump to shared code
- jr drawNumShared
-
-draw24BitNumber:
- ld hl,(ix+iDataPTR)
- 
- ld hl,(hl) ;hl is number
- 
-drawNumShared:
- ld de,drawNumString+11
- ld b,12
-convToString:
- push bc
- ld a,10
- call _DivHLByA
- add a,48
- ld (de),a
- dec de
- pop bc
- djnz convToString ;a=0 is end of loop
- 
- ld bc,0
- ld c,(ix+iDataW)
- ld hl,drawNumString+12
- or a,a
- sbc hl,bc
- push hl
- 
- ld de,0
- ld e,(ix+iDataXL)
- ld d,(ix+iDataXH)
- ld hl,0
- ld l,(ix+iDataY) ;xy set
- ld a,(ix+iDataA) ;color
- ld c,(ix+iDataH) ;bg color 0=transparent
- pop ix ;string data ptr
- 
- call drawTextManual
+ call drawMinoObject
  ret
 
-;ix = input
-drawSpriteObject:
- ld h,sp8bpp ;default 8bpp
-drawSpriteObj:
- ld a,h ;save bpp
- push ix
- ld hl,(ix+iDataPTR)
- push hl ;ptr to sprite data
- 
- ld hl,0
- ld h,a ;get bpp
- ld l,(ix+iDataY)
- 
- ld de,0
- ld d,(ix+iDataXH)
- ld e,(ix+iDataXL)
- 
- ld bc,0
- ld b,(ix+iDataH)
- ld c,(ix+iDataW)
- ld a,(ix+iDataA) 
-
- pop ix
- call drawSpriteCustomBPP
- pop ix
- ret
- 
-;ix is ptr to input data
-drawBox:
- ld de,0
- ld d,(ix+iDataXH)
- ld e,(ix+iDataXL)
- ld hl,0
- ld l,(ix+iDataY)
-
- push de
- ld h,0
- ld d,h ;save HL = Y
- ld e,l
- add hl,hl ;2y
- add hl,hl ;4y
- add hl,de ;5y
- add hl,hl ;10y
- add hl,hl ;20y
- add hl,hl ;40y
- add hl,hl ;80y
- add hl,hl ;160y
- add hl,hl ;320y
- pop de
- add hl,de ;320Y+X
- ld de, (vramOffPtr)
- add hl,de ;320Y+x+vRam
- 
- ld de,320
- ld b,(ix+iDataH)
-drawBoxYLoop:
- push bc
- ;check if y is max or 0
- ld a,b
- cp (ix+iDataH)
- jr z,isBorder
- cp 1
- jr z,isBorder
- ld a,(ix+iDataA)
-drawBorderReturn:
- ld bc,(ix+iDataPTR)
- push hl ;save ptr to graph
-drawBoxX:
- push hl
- pop de ;de = ptr to graph
- inc de ;hl=gptr, de=gptr+1
- ;bc is width of box
- ld (hl),a
- ldir
- ;end of drawBoxX
- ld a,(ix+iDataW) ;border color
- ld (hl),a
- pop hl ;restore old gptr
- ld a,(ix+iDataW) ;border color
- ld (hl),a
- 
- ld de,320
- add hl,de ;move down 1 y unit
- pop bc
- djnz drawBoxYLoop
- ret
-isBorder:
- ld a,(ix+iDataW)
- jr drawBorderReturn
- 
-;ix = data ptr input
-;intended to perform initial draw of menu data
-;output: ix = beginning of jumps/end of menu text
-drawMenu:
- ld b,(ix+iDataW)
- 
- ld hl,(ix+iDataPTR)
- push hl
- 
- ld b,(ix+iDataW) ; # items
- ld hl,0
- ld l,(ix+iDataY)
- ld de,0
- ld d,(ix+iDataXH)
- ld e,(ix+iDataXL) ;de, hl is (X,Y) coords
- 
- ld a,(ix+iDataA)
- pop ix ;points to text data
-drawMenuItems:
- push bc
- push de ;x value
- push af ;color value
- ld c,0 ; no bg color
- call drawTextManual
- inc ix
- ld a,8
- add a,l
- ld l,a ;add 8 to y value
- pop af ;restore color value
- pop de ;restore old x value
- 
- pop bc
- djnz drawMenuItems
- ;ix should point to just past end of text data
- ret
-
-menuDataPTR:
-.dl 0
-menuPTR:
-.dl 0
-cursorPTR:
-.dl 0
-  
-;input:
-;ix is ptr to active display menudata
-activeMenu:
- call clearLCD
- ld a,0
- ld (menuSelection),a
- 
- ld (menuDataPTR),ix
- inc ix ;go past # elements
- 
- ;scan for typeMenu and read for data
- ld de,iDataSize
-menuScanMenu:
- ld a,(ix+iDataType)
- add ix,de
- cp typeMenu
- jr nz,menuScanMenu
- ld de,-iDataSize
- add ix,de ;ix - iDataSize
- ;ix points to a typeMenu object
- ld (menuPTR),ix
- 
- ld b,(ix+iDataW) ;# text items
- ld hl,(ix+iDataPTR)
-scanToMenuJumps:
- ld a,(hl)
- inc hl
- cp 0
- jr nz,scanToMenuJumps ;jump no dec if not end of string
- djnz scanToMenuJumps
- ;hl points to jump table
- ld (smcLoadJumpTable+1),hl
- 
- ld b,(ix+iDataH)
- ld c,iDataSize
- mlt bc ;bc=size*cursorelemid
- ld hl,(menuDataPTR)
- inc hl
- add hl,bc ;hl=ix+size*cursorID or, offset to cursor data
- ld (cursorPTR),hl
- 
- ;wait for no button forward or back through menu
- ld ix,mbuttonConfirm
- call waitNoButton
- ld ix,mbuttonBack
- call waitNoButton
- jr menuDraw
- 
-menuLoop:
- call scanKeys
- 
- ld ix,mbuttonConfirm
- call checkKeyDown
- jp c,menuSelect
- 
- ld ix,mbuttonBack
- call checkKeyDown
- jp c,amenuEnd
- 
- ld ix,mbuttonUp
- call checkKeyDown
- jr c,menuUp
- 
- ld ix,mbuttonDown
- call checkKeyDown
- jr c,menuDown
- 
- ld ix,mbuttonQuit
- call checkKeyDown
- jp c,exit ;early exit option (will end program)
- jr menuLoop ;only redraw if something happens
-
-menuDraw:
- ;draw active items
- ld a,(menuSelection)
- add a,a
- add a,a
- add a,a ;8*selection
- ld ix,(menuPTR) ;ix points to cursor struct
- add a,(ix+iDataY) ;menuY + selection ofs
- ld ix,(cursorPTR)
- ld (ix+iDataY),a ;save y value to cursor
- 
- ld ix,(menuDataPTR)
- call drawObjectsNoReset ;never stop drawing menu objects. 
- call swapVRamPTR
- ld ix,(menuDataPTR)
- call drawObjectsNoReset
- 
- jr menuLoop
- 
-menuUp:
- ld a,(menuSelection)
- cp 0
- jr z, menuDraw ;don't go past zero
- dec a
- ld (menuSelection),a
- jr menuDraw
- 
-menuDown:
- ld a,(menuSelection)
- inc a
- ld ix,(menuPTR)
- cp (ix+iDataW) ;# items
- jr nc, menuDraw ;don't go past end of list
- ld (menuSelection),a
- jr menuDraw
-
-amenuEnd:
- ;uh
- ld a,$FF
- ld (menuSelection),a ;yeah
- 
-menuSelect: 
- ld de,0
- ld a,(menuSelection)
- inc a
- ld e,a
- 
-smcLoadJumpTable:
- ld hl,$000000 ;this will be replaced
- add hl,de
- add hl,de
- add hl,de
- add hl,de
- 
- jp (hl)
- 
-;uses (menuSelection) and (menuPTR) to get string ptr
-getStringPTRSelection:
- ld ix,(menuPTR)
- 
- ld hl,(ix+iDataPTR)
- 
- ld a,(menuSelection)
- ;hl: pointer to string list
- ;a: selection in list
-getStringInList:
- or a,a
- jr z, ptrOK ;selection is found
- 
- ld b,a
-scanMenuText:
- ld a,(hl)
- inc hl
- or a,a ;cp 0
- jr nz, scanMenuText
- ;gets here after a 0 is found
- djnz scanMenuText
- 
-ptrOK:
- ;pointer is found to string
- ;hl = pointer
- ;or a,a
- ;ld de,SSS
- ;sbc hl,de ;hl=ofs from SSS
- ret
- 
-numberMax:
-.db 0
-setNumberPTR:
-.dl 0
-setVarPTR:
-.dl 0
-;setVarPTR is the pointer to the variable being
-;modified by setNumber.
-;or, what is being "selected."
-
-setNumber:
- ;ix points to data
- ld (numberMax),a
- ld (setNumberPTR),ix
-
- ld hl,(ix+iDataPTR)
- ld (setVarPTR),hl ;points to variable to set
- 
- ld a,(hl) ;get default/previous from memory
- ld (numberSelection),a
- 
- ld ix, mbuttonConfirm
- call waitNoButton ;wait for no confirmation press
- ld ix, mbuttonBack
- call waitNoButton ;wait for no back press
- 
-setNumberLoop:
- call scanKeys
- 
- ld ix,mbuttonBack
- call checkKeyDown
- jr c, setNumberFinal ;return from setNumber
-
- ld ix,mbuttonConfirm
- call checkKeyDown
- jr c, setNumberFinal ;return from setNumber
- 
- ld ix,mbuttonLeft
- call checkKeyDown
- jr c, setNumDown
- 
- ld ix,mbuttonRight
- call checkKeyDown
- jr c, setNumUp
-
- ld ix,mbuttonQuit
- call checkKeyDown
- jp c,exit ;early exit option (will end program)
- jr setNumberLoop ;only redraw if something happens
- 
-setNumDown:
- ld a,(numberSelection)
- dec a
- cp 255
- jr z, setNumDraw ;don't dec past 0
- ld (numberSelection),a
- jr setNumDraw
- 
-setNumUp:
- ld a,(numberMax)
- ld b,a
- ld a,(numberSelection)
- inc a
- cp b
- jr nc, setNumDraw
- ld (numberSelection),a
- ;jr setNumDraw
- 
-setNumDraw:
- call updateSetNum
- 
- ld ix,(setNumberPTR)
- call drawObjectNoReset
- call swapVRamPTR
- ld ix,(setNumberPTR)
- call drawObjectNoReset
- jr setNumberLoop
- 
-updateSetNum:
- ld hl,(setVarPTR)
- ld a,(numberSelection)
- ld (hl),a
- ret
- 
-setNumberFinal: ;just wait for confirm/back to be released, then end
- ld ix, mbuttonBack
- call waitNoButton
- ld ix, mbuttonConfirm
- call waitNoButton
- ret ;return from setNumber call
-
-;input:
-;ix = obj data ptr
-drawMap:
- ld a,(ix+iDataA)
- ld (smcDMB_b),a
- 
- ld hl,(drefSprite)
- ld b,(hl)
- inc b
-divideByBPPmap:
- rrca
- djnz divideByBPPmap
- ld (smcDMB_c),a
- 
- ld a,(hl)
- ld (smcDMB_h),a
- 
- ld hl,(ix+iDataPTR)
- ld a,(hl) ;null block graphic index
- inc hl
- ld de,(hl)
- push de ;pointer to actual map tile data
- 
- ld hl,(drefBlocks)
- add a,a
- ld de,0
- ld e,a
- add hl,de ;pointer to null-block sp-pal pair
- 
- ld c,(hl) ;sprite index
- inc hl
- ld a,(hl) ;palette
- ld (smcDNMB_a),a
- ld a,c ;sprite index
- 
- ld hl,(drefSprite)
- ld b,(hl) ;bpp
- inc hl ;points to sprite data
- inc b
- ld c,(ix+iDataA) ;tilesize
-divideByBPPdml:
- srl c
- djnz divideByBPPdml
- ld b,(ix+iDataA)
- mlt bc ;block size
- ;bc = block size in bytes. assume size <256
- ld b,a ;sprite data id
- mlt bc ;should be offset from drefSprite
- add hl,bc ;points to sprite data
- ld (smcDNMB_ix),hl ;this is all set up now
- 
- pop hl ;block ptr
- 
- ld de,0
- ld d,(ix+iDataXH)
- ld e,(ix+iDataXL)
- ld (smcDM_x),de
- ld (smcDMy_x),de
- 
- ld d,0
- ld e,(ix+iDataY)
- ld (smcDM_y),de
- 
- ;at this point:
- ;hl = ptr to map data
- ;ix = obj data ptr
- ;smcDMB b,c,h are set
- ;ix,a depend on tile
- ;stack: y,x (coords)
- ld b,(ix+iDataH)
-drawMapLoopY:
- ld c,b
- ld b,(ix+iDataW)
-smcDMy_x = $ + 1
- ld de,0
- ld (smcDM_x),de
-drawMapLoopX:
- push bc
- 
- ld a,(hl)
- push hl
- add a,a
- ld hl,(drefBlocks)
- ld de,0
- ld e,a
- add hl,de
- ld b,(hl) ;block/sprite id
- inc hl
- ld a,(hl) ;palette
- ld (smcDMB_a),a
- 
- ld a,b ;get sprite data from block id
-
- ld hl,(drefSprite)
- ld b,(hl) ;bpp
- inc hl ;points to sprite data
- inc b
- ld c,(ix+iDataA) ;tilesize
-divideByBPPdm:
- srl c
- djnz divideByBPPdm
- ld b,(ix+iDataA)
- mlt bc ;block size squared
- ;bc = block size in bytes. assume size <256
- ld b,a ;sprite data id
- mlt bc ;should be offset from drefSprite
- add hl,bc ;points to sprite data
- ld (smcDMB_ix),hl ;this is all set up now
- 
-smcDM_x = $ + 1
- ld de,0
-smcDM_y = $ + 1
- ld hl,0
- 
- push ix
- push hl
- push de
-  
- call drawNullMinoBlock
- pop de
- pop hl
- 
- call drawMinoBlock
- pop ix
- 
- ld hl,(smcDM_x)
- ld de,0
- ld e,(ix+iDataA) ;tile size
- add hl,de
- ld (smcDM_x),hl
- 
- pop hl
- inc hl
- pop bc
- djnz drawMapLoopX
- ld b,c
- 
- push hl
- ld hl,(smcDM_y)
- ld de,0
- ld e,(ix+iDataA) ;tile size
- add hl,de
- ld (smcDM_y),hl
- pop hl
- 
- djnz drawMapLoopY
- ret
- 
-randsav:
- .db 0,0,0,0
-randbag:
- .db 0,0,0,0,0,0,0 ;7 slots for the 7 pieces
-randbag2:
- .db 0,0,0,0,0,0,0 ;backup bag for next 7
-RANDOM_NULL = 7 ;empty slot
-
-getNextBagItem:
- ld a,(randbag) ;get first item
- push af
- ld hl,randbag+1
- ld de,randbag
- ld bc,13
- ldir ;slide all previous items up in queue
- ld hl,randbag2 + 6
- ld (hl),RANDOM_NULL
- ld a,(randbag2)
- cp RANDOM_NULL ;check that randbag2 is not empty
- ld hl,randBag2
- call z,randFillBag ;if the bag is empty, fill it.
- pop af
- ret
-
-initBag:
- call randInit
- 
- ld hl, randbag
- call randFillBag
- ld hl, randbag2
- call randFillBag
- ret
-
-;input:
-;hl= ptr to bag to fill 
-randBagPtr:
- .db 0,0,0 ;save ptr to bag here
-randCountFail:
- .db 0
-randFillBag: 
- ld b,7
- ld (randBagPtr),hl
-randFillLoop:
- push bc
- push hl
-randTryAgain:
- call rand
- ld a,e
- and $07
- cp RANDOM_NULL
- jr z, randTryAgain ; seven is not an OK random number
- ld b, 7
- ld hl, (randBagPtr)
-randCheckLoop:
- cp (hl)
- jr z, randTryAgain
- inc hl
- djnz randCheckLoop
- pop hl
- ld (hl),a ;value is good; save
- inc hl ;next item
- pop bc
- djnz randFillLoop
- ret
-
-randseed:
- .db 0,0,0
-randinput:
- .db 0
- 
-;initialize random stuff
-randInit:
- ;init randseed
- ld a,r
- ld (randseed),a
- ld a,r
- add a,42
- ld (randseed+1),a
- 
- ;init bags with RANDOM_NULL
- ld hl, randbag
- ld de, randbag+1
- ld bc, 13
- ld (hl), RANDOM_NULL
- ldir
- ret
- 
-
-;generates a random 16-bit nubmer
-;galosis LFSR, based on wikipedia page
-;en.wikipedia.org/wiki/Linear-feedback_shift_register
-;Just read the wikipedia page.
-;This version is a slightly modified version of a bugged z80 version I created a few years ago.
-rand:
- ld de,(randseed)
- ld a,(randinput)
- bit 0,a
- call nz,randXOR
- ld a,(randinput)
- ld l,a
- push hl
- pop af
- rr d
- rr e
- push af
- pop hl
- ld a,l
- ld (randinput),a
- ld (randseed),de
- ret
-randXOR:
- ld a,%10110100 ;this is the ideal set of bits to invert for a maximal cycle, apparently. (for 16 bits anyway)
- xor d
- ld d,a
- ret
- 
-;key registers read to here
-keys:
-.db 0,0,0,0
-.db 0,0,0,0
-
-defaultButtonData:
-PSS1024CopiedData:
-;buttonleft:
-.db 49, 7, 2, 0
-;buttonright:
-.db 50, 7, 2, 0
-;buttonsoft:
-.db 48, 0, 3, 0
-;buttonhard:
-.db 51, noRepeat, noRepeat, 0
-;buttonrotateleft:
-.db 5, noRepeat, noRepeat, 0
-;buttonrotateright:
-.db 15, noRepeat, noRepeat, 0
-;buttonhold:
-.db 23, noRepeat, noRepeat, 0
-;buttonpause:
-.db 6, noRepeat, noRepeat, 0
-
-;buttonup:
-.db 51, 60, 15, 0
-;buttondown:
-.db 48, 60, 15, 0
-;buttonleft:
-.db 49, 60, 15, 0
-;buttonright:
-.db 50, 60, 15, 0
-
-;buttonconfirm:
-.db 5, noRepeat, noRepeat, 0
-;buttonback:
-.db 15, noRepeat, noRepeat, 0
-;buttonquit:
-.db 7, noRepeat, noRepeat, 0
-defaultButtonDataEnd:
-PSS1024CopiedDataEnd:
-defaultButtonDataSize = defaultButtonDataEnd - defaultButtonData
-
-;ix = ptr to key data to check
-checkKeyDown:
- ld a,(ix+buttonID)
- call checkKeyA
- ;so carry is set or not
- push af ;save carry state
- ld a,(ix+buttonTimer)
- cp 0
- jr z, buttonOK
- cp (ix+buttonTimeStart)
- jr c, buttonNotOK ;less than start time
- sub (ix+buttonTimeStart) ;remove start time
- cp (ix+buttonTimeRepeat) ;compare to repeater time
- jr c, buttonNotOK ;less than repeat: don't repeat
- ;hit repeat timer: reset it, continue, key is good
- ld a,(ix+buttonTimeStart)
- ld (ix+buttonTimer),a
- 
-buttonOK:
- pop af ;use whatever state button had
- 
- jr nc, resetTimer
- inc (ix+buttonTimer)
- ret
- 
-buttonNotOK:
- pop af
- jr nc, resetTimer ;button isn't pressed anyways
- inc (ix+buttonTimer) ;inc for eventual repeat
- 
- or a,a ;clear carry
- ret
-
-resetTimer:
- ld a,0
- ld (ix+buttonTimer),a
- ret
-
-checkKeyA:
- ld de,0
- ld e,a
- and $07 ; a = bit
- srl e
- srl e
- srl e  ; e = byte
- ld hl, keys
- add hl,de ;add byte ofs 
- ld b,a
- ld a,(hl) 
- inc b 
- ;b is shift count
- ;a is data to shift
-shiftKeyBit:
- rrca
- djnz shiftKeyBit
- rlca ;result: carry if pressed
- ret
- 
-;ix points to button info
-;wait for no press of selected button
-;note: ix will still point to button data after
-;being called
-waitNoButton:
- call scanKeys
-
- call checkKeyDown
- jr c, waitNoButton ;wait for no selection
- ret
- 
-;waits for button press
-;ix points to button info
-;note: ix will still point to button data after
-;function ends
-waitButton:
- call scanKeys
-
- call checkKeyDown
- jr nc, waitButton ;wait for selection
- ret 
-
-checkKey:
- call scanKeys
- ld a,-1
- ld (smcLastPress),a ;if no press, default -1
- ld b,64
-rkeys:
- push bc
- ld a,b
- dec a
- call checkKeyA
- pop bc
- jr nc,noSetLastPress
- ld a,b
- dec a
- ld (smcLastPress),a
-noSetLastPress:
- djnz rkeys
-smcLastPress = $+1
- ld a,-1 ;a is key id pressed
- ret
- 
-;source: http://wikiti.brandonw.net/index.php?title=84PCE:Ports:A000
-;I get how this works in theory
-;but it's still sketchy to me
-;so I copied it directly
-scanKeys:
- di             ; Disable OS interrupts
- ld hl,0F50000h
- ld (hl),2      ; Set Single Scan mode
-
- xor a,a
-scan_wait:
- cp a,(hl)      ; Wait for Idle mode
- jr nz,scan_wait
-
- ;just take all of the keys
- ;probably can loop but eh
- ld a,(kbdG1)
- ld (keys),a
- ld a,(kbdG2)
- ld (keys+1),a
- ld a,(kbdG3)
- ld (keys+2),a
- ld a,(kbdG4)
- ld (keys+3),a
- ld a,(kbdG5)
- ld (keys+4),a
- ld a,(kbdG6)
- ld (keys+5),a
- ld a,(kbdG7)
- ld (keys+6),a
- ;ld a,(kbdG8) ;oh wait
- ;ld (keys+7),a
-
- ei             ; Enable OS interrupts
- ret
- 
-;source: http://wikiti.brandonw.net/index.php?title=84PCE:Ports:A000
-;this is similarily copied from the same source as above
-;but I really don't know what this does internally,
-;so I'm copying and not changing anything here.
-;might not be necessary, really
-RestoreKeyboard:
- ld hl,0F50000h
- xor a		; Mode 0
- ld (hl),a
- inc l		; 0F50001h
- ld (hl),15	; Wait 15*256 APB cycles before scanning each row
- inc l		; 0F50002h
- xor a
- ld (hl),a
- inc l		; 0F50003h
- ld (hl),15	; Wait 15 APB cycles before each scan
- inc l		; 0F50004h
- ld a,8		; Number of rows to scan
- ld (hl),a
- inc l		; 0F50005h
- ld (hl),a	; Number of columns to scan
- ret
-
-tSpriteID:
- .db 0
-tSpritePAL:
- .db 0
- 
 CETrisSavVar:
  .db AppVarObj, "CETrisSV", 0
  
@@ -3885,8 +2154,6 @@ speedCurve:
  .dl 256187, 433425, 749597, 1325716, 2398490
 
 ;format: x ofs, y ofs, spriteID, palette
-spriteID = 8
-spritePAL= 9
 ;I piece
 PSS768CopiedData:
  .db -1, 0
@@ -3939,8 +2206,8 @@ kicksI:
  .db -1,-1,  1,-1, -2,-1,  1, 0, -2, 0
  .db  0,-1,  0,-1,  0,-1,  0, 1,  0,-2
  .db  0, 0, -1, 0,  2, 0, -1, 0,  2, 0 ;same
- 
-;this has never been used properly because it wasn't worth it, but it might be used later for "accuracy purposes"
+
+; finally, a REAL rotation 
 kicksO:
  .db  0, 0
  .db  0, 1

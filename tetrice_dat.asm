@@ -28,13 +28,13 @@ dataReferences:
 ;make sure it points to SSS data,
 ;not the original data, because program reads from SSSInfo.
 references:
-.dl fieldInfo - itemsInfo + SSSInfo
-.dl holdInfo - itemsInfo + SSSInfo
-.dl levelInfo - itemsInfo + SSSInfo
-.dl scoreInfo - itemsInfo + SSSInfo
-.dl linesInfo - itemsInfo + SSSInfo
-.dl previewInfo - itemsInfo + SSSInfo
-.dl timerInfo - itemsInfo + SSSInfo
+.dl fieldInfo
+.dl holdInfo
+.dl levelInfo
+.dl scoreInfo
+.dl linesInfo
+.dl previewInfo
+.dl timerInfo
 
 ;note: address expected in tetrice.inc to be refSize * 16 + SSS. be sure to modify if refs are added.
 initDat:
@@ -48,23 +48,28 @@ infoBoxX = 168
 infoBoxY = 16
 
 itemsInfo:
-.db 10 ;number of items
+.db 11 ;number of items
 fieldInfo:
 .db typeMap
 .dw 0 ;x
 .db 0 ;y
 .db 12 ;a/size of tile
-.dl fieldExtraInfo
+.dl 1 ;flags
 .db fieldDrawWidth, fieldDrawHeight ;10, 20 default
+;fieldExtended
+.db typeExtended ;part of previous object
+.dl spriteData
+.dl blockGraphicData ;tileset pointer here
+.dl (fieldHeight - fieldDrawHeight) * fieldDrawWidth + field
 holdInfo:
-.db typeHold
+.db typeExtended ;typeHold
 .dw 132
 .db 160
 .db 12 ;size of tile
 .dl 0 ;uses refSprite data ptr
 .db 4, 4 ;width, height
 previewInfo:
-.db typePreview
+.db typeExtended ;typeHold
 .dl previewBox ;note: eats up 3 bytes
 .db 0 ;unused?
 .dl previewCoords 
@@ -119,11 +124,7 @@ highscoreInfo:
 .dl highScore
 .db 8, boxcolor
 
-fieldExtraInfo:
- .db NULL_BLOCK
- .dl (fieldHeight - fieldDrawHeight) * fieldDrawWidth + field
- 
-gameText
+gameText:
  .db "Score:",0
  .db "Timer:",0
  .db 0
@@ -852,7 +853,7 @@ buttonText:
  .db "MODE",0
  .db "DEL",0
 ;g2
- .db "none",0 ;really ON: unobtainable
+ .db "ON",0 ;unobtainable
  .db "STO",0
  .db "LN",0
  .db "LOG",0
@@ -886,7 +887,7 @@ buttonText:
  .db "(",0
  .db "TAN",0
  .db "VARS",0
- .db "none",0
+ .db "NA",0
 ;g6
  .db "ENTER",0
  .db "+",0
@@ -895,7 +896,7 @@ buttonText:
  .db "/",0
  .db "^",0
  .db "CLEAR",0
- .db "none",0
+ .db "NA",0
 ;g7
  .db "DOWN",0
  .db "LEFT",0
@@ -903,6 +904,7 @@ buttonText:
  .db "UP",0
 
 blockGraphicData:
+ .db  0, 0
  .db  0, 4
  .db  0, 8
  .db  0, 12
@@ -911,8 +913,7 @@ blockGraphicData:
  .db  0, 24
  .db  0, 28
  .db  0, 31
- .db  0, 0
- 
+
 spriteData:
 .db sp2bpp
 ;default
@@ -1784,4 +1785,4 @@ paletteData:
 .dw $3def, $2dc1, $0964, $1ce7
 .dw $3def, $316e, $288a, $0000
 .dw $3def, $3d4c, $3822, $2001 ;16
-paletteDataEnd:
+
