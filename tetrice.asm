@@ -156,9 +156,10 @@ game:
  call update
  call drawGame
  
- ld hl,(globalTimer)
- inc hl
- ld (globalTimer),hl
+ ld a,(globalTimer)
+ inc a
+ and $01
+ ld (globalTimer),a
  
  ld hl, (refTimer) ;time updates every frame
  res redrawObjBit, (hl)
@@ -1762,15 +1763,16 @@ getMinoBlockData:
 ;a = type
 drawMinoFromType:
 ;set coordinates of mino
- ld c,a
+ ld bc,0
+ ld c,l
+ ld (minoBlockBaseY),bc
  ld (minoBlockBaseX),de
- ld a,l
- ld (minoBlockBaseY),a
  ex de,hl
 ;d=setting
  push de
- ld a,c
+ dec a
  call getMinoBlockData
+ inc a ;used as palette 
  pop de 
  push hl
  push af
@@ -1904,10 +1906,10 @@ notErase:
  
  bit drawMinoDark, d
  jr z,notDark
- ld a,32 ;TODO: make flexible?
+ ld a,(minoBlockObj+iDataA) ;TODO: make flexible? use bc?
 ;Alternate TODO: set darkBit, (ix+iDataA) ;?
- add a,(ix+iDataA)
- ld (ix+iDataA),a
+ add a,32
+ ld (minoBlockObj+iDataA),a
 notDark:
  ld b,4 ;number of blocks (TODO make flexible)
 
@@ -1956,6 +1958,7 @@ dMBOutOfBounds:
  pop hl
  pop bc
  djnz drawMinoBlocks
+ ret
 
 ;input:
 ;b,c = multiply, b is signed
@@ -2215,7 +2218,7 @@ kicksO:
  .db -1, 0
  .db  0, 0
 
-;this is needed to give important menu jumps 
+;this is needed to give important jumps 
 ;fixed addresses to call from the data file, 
 ;which doesn't have access to the main program's 
 ;data. That way, menus can be designed separately
@@ -2224,12 +2227,13 @@ kicksO:
 menuJumps:
  jp mainMenu				;return to main menu
  jp initGame				;start game
- jp exit					;exit program
+ jp exit				;exit program
  jp activeMenu				;"runs" a menu object
  jp getStringInList			;gets [a] in menu/list
- jp getStringPTRSelection	;gets selected item
+ jp getStringPTRSelection		;gets selected item
  jp setNumber				;select 8bit number
  jp drawObject				;draw given object
  jp checkKey				;keypress to [a]
  jp swapVRamPTR				;exactly what it says
+ jp drawMinoFromType			;draw a mino at a location
 menuJumpsEnd:

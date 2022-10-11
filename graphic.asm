@@ -458,9 +458,8 @@ resAllObjects:
 ;(lets only one redraw flag cover multiple items)
 drawCompound:
  ld a,(smcRedrawReset)
- ld ix,(ix+iDataPTR) ;now points to new set of objects
- ld b,(ix) ; object count
- inc ix ; points to first object
+ ld b,(ix+iDataW) ; number of elements in compound
+ ld ix,(ix+iDataPTR) ;now points to new set of objects (does not include number start)
  push af
 drawAllSubobjects:
  push bc

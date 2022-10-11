@@ -62,14 +62,14 @@ fieldInfo:
 .dl blockGraphicData ;tileset pointer here
 .dl (fieldHeight - fieldDrawHeight) * fieldDrawWidth + field
 holdInfo:
-.db typeExtended ;typeHold
-.dw 132
-.db 160
-.db 12 ;size of tile
-.dl 0 ;uses refSprite data ptr
-.db 4, 4 ;width, height
+.db typeCompound ;typeHold
+.dw 0 ;unused
+.db 0 ;unused
+.db 0 ;unused
+.dl holdCompound ;ptr to compound object data (does not include item count)
+.db 3, 0 ; number of items, unused
 previewInfo:
-.db typeExtended ;typeHold
+.db typeIgnore
 .dl previewBox ;note: eats up 3 bytes
 .db 0 ;unused?
 .dl previewCoords 
@@ -123,6 +123,49 @@ highscoreInfo:
 .db textColor
 .dl highScore
 .db 8, boxcolor
+
+holdCompound:
+holdBackground:
+.db typeMap
+.dw 132 ;x
+.db 160 ;y
+.db 12 ;tile size (pixels)
+.dl 0 ;no flags needed
+.db 4, 4 ;width, height (tiles)
+holdBGExtended:
+.db typeExtended
+.dl spriteData
+.dl blockGraphicData
+.dl empty16
+holdMino:
+.db typeCustom
+.dw 144 ;x
+.db 184 ;y
+.db 0 ;unused
+.dl drawMinoFromTypeWrapper
+.db 4, 0 ;unused, setting (partially overrode in draw function)
+
+;ix points to holdMino's data
+drawMinoFromTypeWrapper:
+ or a,a
+ sbc hl,hl
+ ld a,(curStatus)
+ push hl
+ pop de ;de=hl=0
+ ld e,(ix+iDataXL)
+ ld d,(ix+iDataXH)
+ ld h,(ix+iDataH)
+ bit csUsedHold, a
+ jr z, holdReady
+ set drawMinoDark, h
+holdReady:
+ ld l,(ix+iDataY)
+ ld a,(holdT)
+ push ix
+ ld ix,fieldInfo
+ call jptDrawMino
+ pop ix
+ ret
 
 gameText:
  .db "Score:",0
@@ -776,8 +819,7 @@ listButtonLoop:
  
  ld hl,buttonText
  call jptGetStringInList
- ld (ix+iDataPTRH),h
- ld (ix+iDataPTRL),l
+ ld (ix+iDataPTRL),hl
 
  res redrawObjBit, (ix+iDataType)
  push ix
@@ -990,6 +1032,12 @@ logoSprite:
 .db $ff,$df,$f8,$61,$80,$c0,$60
 .db $7f,$df,$f8,$61,$80,$df,$e0
 .db $3f,$df,$f8,$61,$80,$df,$c0
+
+;sequence of 16 bytes of zeroes
+;used to draw hold map background
+;note: sp1bpp = 0
+empty16:
+.db 0,0,0,0,0,0,0
 
 fontData:
 ;bits per pixel

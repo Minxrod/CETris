@@ -140,8 +140,6 @@ testCompound:
  .db 0, 0
 
 testAll:
- .db 11
-
 testSpd:
  .db typeNumber
  .dw 0

@@ -160,6 +160,7 @@ jptSetNumber 	equ	 menuJumpTable + 24
 jptDrawObject 	equ	 menuJumpTable + 28 ;for custom draws
 jptCheckKey 	equ	 menuJumpTable + 32 ;yes
 jptSwapVRamPTR 	equ	 menuJumpTable + 36 ;okay
+jptDrawMino	equ	 menuJumpTable + 40 ;eh, maybe these should be split up somehow?
 
 userVars 	equ	 PSS + 3072
 
@@ -253,6 +254,7 @@ typeBox	equ	13
 typeCustom	equ	14 ;jumps to PTR provided, enables custom draw code
 typeCompound	equ	15 ;uses pointer to another set of objects
 typeExtended	equ 	16 ;ignore
+typeIgnore	equ	16 ;same as extended, use for clarity of purpose (ex. disable an object for some reason)
 
 ;data references used in main program
 ;all defined relative to SSS, so doesn't need actual data.
