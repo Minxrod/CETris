@@ -69,11 +69,12 @@ holdInfo:
 .dl holdCompound ;ptr to compound object data (does not include item count)
 .db 3, 0 ; number of items, unused
 previewInfo:
-.db typeIgnore
-.dl previewBox ;note: eats up 3 bytes
-.db 0 ;unused?
-.dl previewCoords 
-.db 6, 0 ;# of preview blocks, unused
+.db typeCompound
+.dw 0 ;unused
+.db 0 ;unused
+.db 0 ;unused
+.dl previewCompound 
+.db 7, 0 ; number of items, unused
 ;BACKGROUND BOX INFO
 .db typeBox
 .dw infoBoxX ;x
@@ -141,9 +142,60 @@ holdMino:
 .db typeCustom
 .dw 144 ;x
 .db 184 ;y
-.db 0 ;unused
+.db holdTOfs ;minoTypes offset
 .dl drawMinoFromTypeWrapper
-.db 4, 0 ;unused, setting (partially overrode in draw function)
+.db 1<<csUsedHold, 0 ;mask against csStatus, setting (partially overrode in draw function)
+
+previewCompound:
+previewBox:
+ .db typeBox
+ .dw 126 ;x
+ .db 6 ;y
+ .db 2 ;color
+ .dl 36 ;width
+ .db 3, 144 ;border, height
+previewMino1:
+ .db typeCustom
+ .dw 138 ;x
+ .db 18 ;y
+ .db bag1Ofs + 0 ;first preview index
+ .dl drawMinoFromTypeWrapper
+ .db 0, 1<<drawMinoHalf
+previewMino2:
+ .db typeCustom
+ .dw 138 ;x
+ .db 44 ;y
+ .db bag1Ofs + 1 ;second preview piece, etc.
+ .dl drawMinoFromTypeWrapper
+ .db 0, 1<<drawMinoHalf
+previewMino3:
+ .db typeCustom
+ .dw 138 ;x
+ .db 68 ;y
+ .db bag1Ofs + 2
+ .dl drawMinoFromTypeWrapper
+ .db 0, 1<<drawMinoHalf
+previewMino4:
+ .db typeCustom
+ .dw 138 ;x
+ .db 90 ;y
+ .db bag1Ofs + 3
+ .dl drawMinoFromTypeWrapper
+ .db 0, 1<<drawMinoHalf
+previewMino5:
+ .db typeCustom
+ .dw 138 ;x
+ .db 116 ;y
+ .db bag1Ofs + 4
+ .dl drawMinoFromTypeWrapper
+ .db 0, 1<<drawMinoHalf
+previewMino6:
+ .db typeCustom
+ .dw 138 ;x
+ .db 138 ;y
+ .db bag1Ofs + 5
+ .dl drawMinoFromTypeWrapper
+ .db 0, 1<<drawMinoHalf
 
 ;ix points to holdMino's data
 drawMinoFromTypeWrapper:
@@ -151,16 +203,24 @@ drawMinoFromTypeWrapper:
  sbc hl,hl
  ld a,(curStatus)
  push hl
- pop de ;de=hl=0
+ push hl
+ push hl
+ pop bc
+ ld c,(ix+iDataA)
+ ld hl,minoTypes
+ add hl,bc
+ ld c,(hl)
+ pop de ;0
+ pop hl ;0
  ld e,(ix+iDataXL)
  ld d,(ix+iDataXH)
  ld h,(ix+iDataH)
- bit csUsedHold, a
+ and (ix+iDataW)
  jr z, holdReady
  set drawMinoDark, h
 holdReady:
  ld l,(ix+iDataY)
- ld a,(holdT)
+ ld a,c
  push ix
  ld ix,fieldInfo
  call jptDrawMino
@@ -176,28 +236,7 @@ gameText:
  .db 0
  .db " Best:",0
  
-previewBox:
- .db typeBox
- .dw 126 ;x
- .db 6 ;y
- .db 2 ;color
- .dl 36 ;width
- .db 3, 144 ;border, height
- 
-previewCoords:
- .dw 132
- .db 12
- .dw 132
- .db 36
- .dw 132
- .db 60
- .dw 132
- .db 84
- .dw 132
- .db 108
- .dw 132
- .db 132
- 
+
 SSSInfo = itemsInfo
 
 menuObjData:
@@ -926,7 +965,7 @@ buttonText:
  .db "3",0
  .db "6",0
  .db "9",0
- .db "(",0
+ .db ")",0
  .db "TAN",0
  .db "VARS",0
  .db "NA",0

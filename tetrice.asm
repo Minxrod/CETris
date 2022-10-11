@@ -134,7 +134,7 @@ initGame:
  ;first draw to set up screen
  call clearLCD
  ld ix,(drefIInfo)
- call resetAllDrawCheck
+ call resetAllNeeded
  ld ix,(drefIInfo)
  call drawObjectsNoReset
  call swapVRamPTR
@@ -156,10 +156,9 @@ game:
  call update
  call drawGame
  
- ld a,(globalTimer)
- inc a
- and $01
- ld (globalTimer),a
+ ld hl,(globalTimer)
+ inc hl
+ ld (globalTimer),hl
  
  ld hl, (refTimer) ;time updates every frame
  res redrawObjBit, (hl)
@@ -377,7 +376,7 @@ pauseEnd:
  jr c, pauseEnd ;wait until release of mode
 
  ld ix, (drefIInfo)
- call resetAllDrawCheck
+ call resetAllNeeded
  ld ix, (drefIInfo)
  call drawObjectsNoReset
  call swapVRamPTR
@@ -433,22 +432,25 @@ update:
  jr z,noNewBlock
  call newBlock ;if set, create block
  ;also requires update hold, if held needs to change
- ld ix,(refHold)
- res redrawObjBit, (ix+iDataType)
+ ld ix,rules
+ bit rbitHoldEnabled, (ix+rfBasic)
+ jr z, noDrawHold
+ ld hl,(refHold)
+ res redrawObjBit, (hl)
+noDrawHold:
 noNewBlock:
  
- ld hl, rules+rfWin
- bit rbitLinesClear, (hl)
+ bit rbitLinesClear, (ix+rfWin)
  jr z, skipEndCheck
  ;check if lines cleared is less than lines needed
  ld a,(lines)
- ld hl, rules+rLCW
- cp (hl) ;nc (hl)<=a ;c (hl)>a
+; ld hl, rules+rLCW
+ cp (ix+rLCW) ;nc (hl)<=a ;c (hl)>a
  jr c, skipEndCheck
  ;game has ended, player won
- ld hl, rules
- res rbitGameCont, (hl)
- set rbitGameWon, (hl) ;win by lines clear
+ ;ld hl, rules
+ res rbitGameCont, (ix+rfBasic)
+ set rbitGameWon, (ix+rfBasic) ;win by lines clear
  
 skipEndCheck:
  
@@ -964,8 +966,12 @@ noCopiesLeft:
  ret
  
 newBlock:
+ ld hl, rules
+ bit rbitPreviewEnabled, (hl)
+ jr z, noRedrawPreview 
  ld hl,(refPreview)
  res redrawObjBit, (hl)
+noRedrawPreview:
 
  ld a,4
  ld (curX),a
@@ -1035,53 +1041,6 @@ determinedBlock:
  call copyBlockData
  ret
  
-checkMoveLeft:
- ld a,(curX)
- ld hl, curBlock
- ld b,4
-checkBlocksInLeft:
- ld c, (hl) ; c=xOfs
- ld a,(curX)
- add a,c ;a=x+xOfs
- cp 0
- jr z,blockTooFarLeft
- push bc
-;check if block will collide
- push hl ;save the block data ptr
- ld c,(hl)
- inc hl
- ld b,(hl) ;(c,b) = (ofsx, ofsy)
- ld a,(curX)
- add a,c
- ld h,a
- ld a,(curY)
- add a,b
- ld l,a
- dec h
- call checkBlock
- cp NULL_BLOCK
- pop hl ;restore and inc 2 block data ptr
- pop bc
- jp nz, blockTooFarRight ;collision with block
- inc hl
- inc hl ;increment to next X
- djnz checkBlocksinLeft
- 
- ;here: no blocks too far left...
- ld a,(curX)
- dec a
- ld (curX),a
- 
- ld hl,curStatus ;last move wasn't rotate
- res csRotateTBit,(hl)
- 
- ;check if block needs lock
-blockTooFarLeft:
- ld a, LOCK_DISABLE
- ld (lockTimer),a
- call checkBlockDownOK
- ret
-
 ;inputs:
 ;a = $44 -> neg x
 ;b = $44 -> neg y
@@ -1129,9 +1088,7 @@ checkRotation:
  ld hl, kicksI
 notIKicks:
  cp 4 ; check O piece
- jr nz, notOKicks
- ld hl, kicksO
-notOKicks:
+ ret z
  push hl ;save table address
  
  call getTableOffset ;de=offset
@@ -1309,48 +1266,59 @@ calculateRXY:
  ld (rY), a
  inc hl ;hl is 2 past previous offset ->
  ret
- 
+
+checkMoveLeft:
+ ld e,0
+ ld d,-1
+ jr checkMove 
+
 checkMoveRight:
+ ld e,9
+ ld d,1
+
+checkMove:
  ld a,(curX)
  ld hl, curBlock
  ld b,4
-checkBlocksInRight:
+checkBlocksToSide:
  ld c, (hl) ; c=xOfs
  ld a,(curX)
  add a,c ;a=x+xOfs
- cp 9
- jr z,blockTooFarRight
+ cp e
+ jr z,blockTooFar
  push bc
- ;check if block will collide
- push hl ;save the block data ptr
+ push de ;contains d=direction e=edge coordinate
+;check if block will collide
  ld c,(hl)
  inc hl
  ld b,(hl) ;(c,b) = (ofsx, ofsy)
+ inc hl
+ push hl ;blockdata at next coord already
  ld a,(curX)
  add a,c
+ add a,d
  ld h,a
  ld a,(curY)
  add a,b
  ld l,a
- inc h
  call checkBlock
  cp NULL_BLOCK
  pop hl ;restore and inc 2 block data ptr
+ pop de
  pop bc
- jr nz, blockTooFarRight ;collision with block
- inc hl
- inc hl ;increment to next X
- djnz checkBlocksinRight
- ;here: no blocks too far right...
+ jp nz, blockTooFar ;collision with block
+ djnz checkBlocksToSide
+ 
+ ;here: no blocks too far left...
  ld a,(curX)
- inc a
+ add a,d
  ld (curX),a
  
  ld hl,curStatus ;last move wasn't rotate
  res csRotateTBit,(hl)
  
- ;check if still needs lock timer
-blockTooFarRight:
+ ;check if block needs lock
+blockTooFar:
  ld a, LOCK_DISABLE
  ld (lockTimer),a
  call checkBlockDownOK
@@ -1473,12 +1441,8 @@ copyBlockData:
  ldir
  ret
 
-randsav:
- .db 0,0,0,0
-randbag:
- .db 0,0,0,0,0,0,0 ;7 slots for the 7 pieces
-randbag2:
- .db 0,0,0,0,0,0,0 ;backup bag for next 7
+randbag = minoTypes + bag1Ofs
+randbag2 = minoTypes + bag2Ofs
 RANDOM_NULL = 0 ;empty slot
 
 getNextBagItem:
@@ -1601,7 +1565,25 @@ drawGame:
  call drawObjects
  call updateMino 
  ret
+
+; resets all except things that should be disabled for this mode
+resetAllNeeded:
+ ld ix,(drefIInfo)
+ call resetAllDrawCheck 
  
+ ld hl, rules
+ bit rbitHoldEnabled, (hl)
+ jr nz,holdDraw
+ ld ix, (refHold)
+ set redrawObjBit, (ix)
+holdDraw:
+ bit rbitPreviewEnabled, (hl)
+ jr nz,previewDraw
+ ld ix, (refPreview)
+ set redrawObjBit, (ix)
+previewDraw:
+ ret
+
 ;checks if mino update is needed
 ;if yes, draws mino
 updateMino:
@@ -1627,7 +1609,7 @@ gameEndInit:
  call checkBest
 
  ld ix,(drefIInfo)
- call resetAllDrawCheck
+ call resetAllNeeded
  ld ix,(drefIInfo)
  call drawObjectsNoReset
  ld ix,(drefGameOver)
@@ -1820,7 +1802,7 @@ drawMinoWriteC:
  ld a,(hl)
  bit drawMinoHalf, d
  jr z,notDrawMinoHalf
- set spHalf, a ; set the half-scale bit of the bpp setting 
+ or spHalf ; set the half-scale bit of the bpp setting 
 notDrawMinoHalf:
  ld (minoBlockObj),a
  and $03
@@ -1832,7 +1814,7 @@ notDrawMinoHalf:
  inc hl
  bit drawMinoHalf, d
  jr z,notDrawMinoHalfC
- srl c
+;srl c
 notDrawMinoHalfC:
  ld (hl),c ;size (pixels)
  ret
@@ -1912,11 +1894,17 @@ notErase:
  ld (minoBlockObj+iDataA),a
 notDark:
  ld b,4 ;number of blocks (TODO make flexible)
+ ld c,(ix+iDataA)
+ bit drawMinoHalf, d
+ jr z,notHalfMino
+ srl c
+notHalfMino:
 
 ;ix = map data ptr
 ;hl = blockdata ptr
 ;d = settings
 ;b = number of blocks in blockdata
+;c = size of block (pixels)
 ;at this point, we have set the constants of minoBlockObj and BaseX, BaseY
 drawMinoBlocks:
  push bc
@@ -1928,7 +1916,6 @@ drawMinoBlocks:
 ; ld a,(ix+iDataW)
 ; cp b ; a - b < 0 --> c set, b > a (out of bounds in x)
 ; jr c,dMBOutOfBounds
- ld c,(ix+iDataA)
  ld e,c
  call multiplyBCSigned
  ld hl,(minoBlockBaseX)

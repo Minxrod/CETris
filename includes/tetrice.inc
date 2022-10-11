@@ -25,7 +25,16 @@ csRotateTBit 	equ	 4   ;T-block last move was rotate
 csWallKicked 	equ	 5   ;if last rotate was kicked
 csUsedHold 	equ	 6     ;hold was used once already
 
-holdT	equ	 PSS + 256
+;mino type data (held piece, next pieces, etc.)
+minoTypes	equ	PSS + 600
+holdTOfs	equ	0
+bag1Ofs		equ	1
+bag2Ofs		equ	8
+
+holdT		equ	minoTypes + holdTOfs
+nextBag1	equ 	minoTypes + bag1Ofs
+nextBag2	equ	minoTypes + bad2Ofs
+
 ;current mino data
 curData 	equ	 PSS + 266
 curX 	equ	 curData + 0
