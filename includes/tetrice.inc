@@ -30,10 +30,12 @@ minoTypes	equ	PSS + 600
 holdTOfs	equ	0
 bag1Ofs		equ	1
 bag2Ofs		equ	8
+demoTOfs	equ	15
 
 holdT		equ	minoTypes + holdTOfs
 nextBag1	equ 	minoTypes + bag1Ofs
 nextBag2	equ	minoTypes + bad2Ofs
+demoT		equ	minoTypes + demoTOfs
 
 ;current mino data
 curData 	equ	 PSS + 266

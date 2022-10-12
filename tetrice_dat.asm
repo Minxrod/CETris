@@ -43,7 +43,7 @@ initDat:
 
 boxColor = 14
 boxColor2= 15
-textColor= 35
+textColor= 3
 infoBoxX = 168
 infoBoxY = 16
 
@@ -588,7 +588,7 @@ setModeFromE:
  ret
  
 optionsMenuData:
- .db 5
+ .db 6
 ;background box
  .db typeBox
  .dw 0 ;x
@@ -625,7 +625,31 @@ themeSelection:
  .db textColor
  .dl theme
  .db 3, 18
+;preview
+previewTheme:
+ .db typeCustom
+ .dw 100
+ .db 80  ;will be overrode by drawPreviewMino
+ .db demoTOfs
+ .dl drawPreviewMinos
+ .db 0, 0
  
+drawPreviewMinos:
+ ld b,7
+dPMLoop:
+ push bc
+ ld a,b
+ ld (demoT),a
+ ld c,24
+ mlt bc
+ ld a,c
+ ld (previewTheme+iDataY),a
+;at the time of writing ix is preserved by dMFTW
+ call drawMinoFromTypeWrapper
+ pop bc
+ djnz dPMLoop
+ ret
+
 optionsMenuText:
  .db "THEME:",0
  .db "CONTROLS",0
@@ -640,7 +664,7 @@ controlMenu:
  
 setTheme:
  ld ix,themeSelection
- ld a,4
+ ld a,12
  call jptSetNumber
  
  call applyTheme
@@ -651,6 +675,8 @@ setTheme:
 applyTheme:
  ld a,(theme) ;value just set here
  ld hl,(drefBlocks)
+ inc hl
+ inc hl ;skip the null block
  ld b,7
 replaceBlockSpriteID:
  ld (hl),a
@@ -1052,6 +1078,105 @@ spriteData:
 .db $6a,$ab,$ff
 .db $3f,$ff,$fc
 .db $0f,$ff,$f0
+
+.db $ff, $ff, $ff
+.db $ea, $be, $ab
+.db $ea, $be, $ab
+.db $ea, $be, $ab
+.db $ea, $be, $ab
+.db $ff, $eb, $ff
+.db $ff, $eb, $ff
+.db $ea, $be, $ab
+.db $ea, $be, $ab
+.db $ea, $be, $ab
+.db $ea, $be, $ab
+.db $ff, $ff, $ff
+.db $ff, $ff, $ff
+.db $e9, $56, $6b
+.db $e5, $59, $ab
+.db $d5, $66, $ab
+.db $d5, $9a, $ab
+.db $d6, $6a, $ab
+.db $d9, $aa, $ab
+.db $e6, $aa, $ab
+.db $da, $aa, $ab
+.db $ea, $aa, $ab
+.db $ea, $aa, $ab
+.db $ff, $ff, $ff
+.db $ff, $ff, $ff
+.db $ff, $ff, $ff
+.db $fa, $aa, $af
+.db $fa, $aa, $af
+.db $fa, $55, $af
+.db $fa, $55, $af
+.db $fa, $55, $af
+.db $fa, $55, $af
+.db $fa, $aa, $af
+.db $fa, $aa, $af
+.db $ff, $ff, $ff
+.db $ff, $ff, $ff
+.db $0a, $aa, $a0
+.db $29, $56, $a8
+.db $a5, $56, $aa
+.db $95, $aa, $aa
+.db $96, $aa, $aa
+.db $96, $aa, $aa
+.db $aa, $aa, $aa
+.db $aa, $aa, $aa
+.db $aa, $aa, $aa
+.db $aa, $aa, $ae
+.db $2a, $aa, $f8
+.db $0a, $aa, $a0
+.db $ff, $ff, $ff
+.db $ea, $aa, $ab
+.db $e5, $56, $ab
+.db $e4, $06, $ab
+.db $e4, $06, $ab
+.db $e5, $56, $ab
+.db $ea, $aa, $ab
+.db $ea, $aa, $ab
+.db $ea, $aa, $ab
+.db $ea, $aa, $ab
+.db $ea, $aa, $ab
+.db $ff, $ff, $ff
+.db $ff, $ff, $ff
+.db $fa, $aa, $af
+.db $ee, $aa, $bb
+.db $eb, $aa, $eb
+.db $ea, $eb, $ab
+.db $ea, $be, $ab
+.db $ea, $be, $ab
+.db $ea, $eb, $ab
+.db $eb, $aa, $eb
+.db $ee, $aa, $bb
+.db $fa, $aa, $af
+.db $ff, $ff, $ff
+.db $2a, $aa, $a8
+.db $95, $55, $56
+.db $95, $55, $56
+.db $95, $55, $56
+.db $95, $55, $56
+.db $95, $55, $56
+.db $95, $55, $56
+.db $95, $55, $56
+.db $95, $55, $56
+.db $95, $55, $56
+.db $95, $55, $56
+.db $2a, $aa, $a8
+
+.db $00, $aa, $00
+.db $0a, $aa, $a0
+.db $2a, $aa, $a8
+.db $a5, $aa, $5a
+.db $97, $eb, $d6
+.db $97, $eb, $d6
+.db $a5, $aa, $5a
+.db $aa, $aa, $aa
+.db $aa, $aa, $aa
+.db $2a, $aa, $a8
+.db $0a, $aa, $a0
+.db $00, $aa, $00
+
 
 logoSprite:
 ;.db sp1bpp
@@ -1855,21 +1980,40 @@ fontDataEnd:
 
 
 paletteData:
-;.dw $00ff, $0ff0, $ff00, $f00f
+; If you swap which of the two below lines is commented, you get a "dark mode" of sorts
+; (background color becomes black; grid is slightly lighter)
 .dw $7fff, $1CE7, $3def, $0000
-.dw $7fff, $4f7d, $029d, $1d39
-.dw $7fff, $3a57, $1d39, $0000
-.dw $7fff, $7f21, $7de4, $4402 ;4
-.dw $7fff, $7fff, $7fc0, $7f21
-.dw $7fff, $5b83, $12c9, $3def
-.dw $7fff, $66fc, $5134, $0000
-.dw $7fff, $7eb9, $7464, $4402 ;8
-.dw $3def, $0c63, $1ce7, $0000
-.dw $3def, $25ae, $014e, $0c8c
-.dw $3def, $1d2b, $0c8c, $0000
-.dw $3def, $3d80, $3ce2, $2001 ;12
-.dw $3def, $3def, $3de0, $3d80
-.dw $3def, $2dc1, $0964, $1ce7
-.dw $3def, $316e, $288a, $0000
-.dw $3def, $3d4c, $3822, $2001 ;16
+;.db $00, $00, $ef, $3d, $18, $63, $ff, $7f
+.db $ff, $7f, $3f, $33, $9d, $02, $b3, $01
+.db $ff, $7f, $9e, $25, $39, $1d, $53, $00
+.db $ff, $7f, $8d, $7e, $e4, $7d, $40, $69
+.db $ff, $7f, $ef, $7f, $c0, $7f, $e0, $62
+.db $ff, $7f, $8c, $17, $08, $0b, $45, $02
+.db $ff, $7f, $fb, $6d, $34, $51, $10, $40
+.db $ff, $7f, $8d, $7d, $64, $74, $00, $60
+.db $00, $00, $08, $21, $8c, $31, $31, $46
+.db $31, $46, $b1, $19, $50, $01, $ca, $00
+.db $31, $46, $d0, $10, $8d, $0c, $0a, $00
+.db $31, $46, $46, $45, $e1, $44, $a0, $38
+.db $31, $46, $08, $46, $00, $46, $80, $35
+.db $31, $46, $e6, $09, $a4, $01, $22, $01
+.db $31, $46, $ee, $38, $8a, $28, $08, $20
+.db $31, $46, $c6, $44, $21, $40, $00, $30
+;.dw $00ff, $0ff0, $ff00, $f00f
+;.dw $7fff, $1CE7, $3def, $0000
+;.dw $7fff, $4f7d, $029d, $1d39
+;.dw $7fff, $3a57, $1d39, $0000
+;.dw $7fff, $7f21, $7de4, $4402 ;4
+;.dw $7fff, $7fff, $7fc0, $7f21
+;.dw $7fff, $5b83, $12c9, $3def
+;.dw $7fff, $66fc, $5134, $0000
+;.dw $7fff, $7eb9, $7464, $4402 ;8
+;.dw $3def, $0c63, $1ce7, $0000
+;.dw $3def, $25ae, $014e, $0c8c
+;.dw $3def, $1d2b, $0c8c, $0000
+;.dw $3def, $3d80, $3ce2, $2001 ;12
+;.dw $3def, $3def, $3de0, $3d80
+;.dw $3def, $2dc1, $0964, $1ce7
+;.dw $3def, $316e, $288a, $0000
+;.dw $3def, $3d4c, $3822, $2001 ;16
 
