@@ -162,6 +162,8 @@ game:
  
  ld hl, (refTimer) ;time updates every frame
  res redrawObjBit, (hl)
+ ld hl,(refScore)
+ res redrawObjBit, (hl)
  
  ld ix,rules
  bit rBitGameCont, (ix+rfBasic)
@@ -409,6 +411,8 @@ hold:
  ;tell draw system to redraw HOLD
  ld ix,(refHold)
  res redrawObjBit, (ix+iDataType)
+ ld hl, drawObjectsNoReset
+ ld (smcDrawObjectsType),hl
  
  ld a,(holdT)
  cp NULL_BLOCK
@@ -548,8 +552,6 @@ hardDropLoop:
 hdrop:
  ld a,1
  ld (lockTimer),a
- ld ix,(refScore)
- res redrawObjBit, (ix+iDataType)
  jr dropReturn
  
 userDrop:
@@ -559,15 +561,13 @@ userDrop:
  ld hl,(score)
  inc hl
  ld (score),hl
- ld ix,(refScore)
- res redrawObjBit, (ix+iDataType)
  
 drop:
  ld hl,0
  ld (timerT),hl
  ld ix,curData
  call checkBlockDown
- jr dropReturn
+ jp dropReturn
  
 lock:
  ld a,LOCK_DISABLE
@@ -680,9 +680,6 @@ checkLines:
  call nz,cascadeBlocks
  
 noLinesSpin: ;needs to update score for spins etc.
- ld ix, (refScore)
- res redrawObjBit, (ix+iDataType)
- 
  ld a,(linesClear)
  ld de,0
  ld e,a ;de is lines cleared
@@ -1066,6 +1063,7 @@ determinedBlock:
 ;inputs:
 ;a = $44 -> neg x
 ;b = $44 -> neg y
+;e = $3c or $3d: inc a or dec a
 ;hl = 10 or -10? (direction to travel kick table)
 ModifyRotate:
 ;ld a,$44 ;neg
@@ -1076,6 +1074,8 @@ ModifyRotate:
  ld (smcCheckRotateNegY),a
  ld (smcRotateNegY),a
 ;ld hl,-10
+ ld a,e
+ ld (smcDecInc),a
  ld (smcCheckCalcRXY),hl
  ld (smcNoRotateRXY),hl
  ret
@@ -1090,6 +1090,7 @@ skipAdjust4:
 ; modify a bunch of different points that are similar but not identical 
  ld a,$44
  ld b,$3c
+ ld e,$3d
  ld hl,-10
  call ModifyRotate
  jr checkRotation
@@ -1098,6 +1099,7 @@ checkRotationRight:
 ; modify a bunch of different points that are similar but not identical 
  ld a,$3c ;tst a (essentially a two-byte NOP here)
  ld b,$44
+ ld e,$3c ;inc a
  ld hl,10
  call ModifyRotate
  jr checkRotation
@@ -1187,7 +1189,8 @@ smcRotateNegY=$+1
  pop hl ;next kick offset (unneeded here)
  
  ld a,(curR)
- dec a
+smcDecInc:
+ inc a ;right
  and $03
  ld (curR),a
  
