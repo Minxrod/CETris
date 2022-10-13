@@ -307,6 +307,8 @@ raiseOneRow:
  res redrawObjBit, (hl) ;ix+0 ix+objtype
  ld hl,curStatus
  set csGarbageBit, (hl) ;garbage rose on this frame = field redraw this frame
+ ld hl,DrawObjectsNoReset
+ ld (smcDrawObjectsType),hl
  ret
 
 shiftOldData:
