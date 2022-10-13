@@ -504,9 +504,7 @@ checkGravityLoop:
  ld (timerT),hl
  ld ix,curData
  call checkBlockDown
- ld a,(lockTimer)
- cp LOCK_DISABLE 
- jr z, checkGravityLoop ;must check for more than 1 row/frame if not locking
+ jr checkGravityLoop ;must check for more than 1 row/frame if not locking
 noDropGravity:
 ;drops are done/unneeded
 
