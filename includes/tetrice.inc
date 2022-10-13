@@ -38,7 +38,7 @@ nextBag2	equ	minoTypes + bad2Ofs
 demoT		equ	minoTypes + demoTOfs
 
 ;current mino data
-curData 	equ	 PSS + 266
+curData 	equ	 PSS + 256
 curX 	equ	 curData + 0
 curY 	equ	 curData + 1
 curR 	equ	 curData + 2
@@ -47,10 +47,14 @@ curStatus 	equ	 curData + 4
 curBlock 	equ	 curData + 5 ;size: 10
 curDataSize 	equ	 curBlock + blockDataSize + blockGraphicSize - curX
 
+curXOfs	equ	0
+curYOfs	equ	1
+curStatusOfs	equ	4
+curBlockOfs	equ	5
+
 ;inbetween cur and old is a middle data chunk
 ;used to handle intermediate frames due to
 ;double-buffer
-;note: should not actually be used, probably?
 midOfs 	equ	 curDataSize
 midData 	equ	 midOfs + curData
 
@@ -58,33 +62,51 @@ midData 	equ	 midOfs + curData
 oldOfs 	equ	 2 * midOfs ;alt. 2 * curDataSize
 oldData 	equ	 oldOfs + curData
 
+;temp data to calculate ghost piece
+tempOfs	equ	 3 * curDataSize
+tempData	equ tempOfs + curData
+
+midTempOfs	equ	4 * curDataSize
+midTempData	equ	curData + midTempOfs
+
+;2-previous frame's ghost
+oldTempOfs equ	 5 * curDataSize
+oldTempData	equ	curData + oldTempOfs
+
 oldX 	equ	 oldOfs + curX
 oldY 	equ	 oldOfs + curY
 oldR 	equ	 oldOfs + curR
 oldT 	equ	 oldOfs + curT
 oldBlock 	equ	 oldOfs + curBlock
 
-score 	equ	 PSS + 320
-level 	equ	 PSS + 324
-lines 	equ	 PSS + 328 
-linesToNextLevel 	equ	 PSS + 332
-timerT 	equ	 PSS + 336
-lockTimer 	equ	 PSS + 340
-globalTimer 	equ	 PSS + 348
-highscore 	equ	 PSS + 352
-garbageTimer 	equ	 PSS + 356
-queuedGarbage 	equ	 PSS + 360
-linesClear 	equ	 PSS + 364
-lineClearInfo 	equ	 PSS + 365
+gameVars	equ	PSS + 360
+score 	equ	 gameVars
+level 	equ	 gameVars + 4
+lines 	equ	 gameVars + 8
+linesToNextLevel 	equ	 gameVars + 12
+timerT 	equ	 gameVars + 16
+lockTimer 	equ	 gameVars + 20	;lock delay
+globalTimer 	equ	 gameVars + 24
+entryTimer	equ	 gameVars + 28	;ARE
+clearTimer	equ	 gameVars + 32	;line clear timer
+highscore 	equ	 gameVars + 40
+garbageTimer 	equ	 gameVars + 44
+queuedGarbage 	equ	 gameVars + 48
+linesClear 	equ	 gameVars + 52 ;only needs one byte
+lineClearInfo 	equ	 gameVars + 56 ;only needs one byte
 lcBackToBack 	equ	 0
 lcPreviousB2B 	equ	 1
 lcTSpin 	equ	 2 ;set even if no lines clear
 
+miscVars	equ	 gameVars + 60
+
 ;not the best location
 ;but I don't really know where to put this stuff
-saveDataPTR 	equ	 PSS + 400 
-menuSelection 	equ	 PSS + 404
-numberSelection 	equ	 PSS + 408
+saveDataPTR 	equ	 miscVars
+menuSelection 	equ	 miscVars + 4
+numberSelection 	equ	 miscVars + 8
+
+ruleVars = miscVars + 12 + 4 ;because rules uses -4 offset for some reason
 
 ;data for various rules, stored as offset from rules
 ;garbage set
@@ -97,7 +119,7 @@ rGGD 	equ	 -2 ;generated garbage density
 ;line clear data
 rLCW 	equ	 -3;lines needed to clear to win
 
-rules 	equ	 PSS + 512
+rules 	equ	 ruleVars
 
 rfBasic 	equ	 0 ;basic mechanics
 rfExtra 	equ	 1 ;extra mechanics

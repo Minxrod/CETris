@@ -315,25 +315,72 @@ skipRow4h:
 ;hl=data ptr
 ;de=vram ptr
 ;speed: ~21cc/px (86cc/4px)
+;unrolled: ~15cc/px (61/4px)
 putPixel2bpp:
- ld ixl,a					;2
+; ld ixl,a					;2
+; ld a,(hl)					;2
+; ld b,4						;2
+;putPixel2bit:					;
+; rlca						;1*4
+; rlca						;1*4
+; ld c,a						;1*4
+; and $03					;2*4
+; jr z, trans2bit				;3*4
+; add a,ixl ;add pal and ofs			;2*4
+; ld (de),a					;2*4
+;trans2bit:					;
+; ld a,c ;restore unmasked value			;1*4
+; inc de						;1*4
+; djnz putPixel2bit				;4*4
+; ld a,ixl					;2
+; inc hl						;1
+; jp putPixelReturn				;5
+
+ ld b,a						;1
  ld a,(hl)					;2
- ld b,4						;2
-putPixel2bit:					;
  rlca						;1*4
  rlca						;1*4
  ld c,a						;1*4
  and $03					;2*4
- jr z, trans2bit				;3*4
- add a,ixl ;add pal and ofs			;2*4
+ jr z,pp21					;3*4
+ add a,b					;1*4
  ld (de),a					;2*4
-trans2bit:					;
- ld a,c ;restore unmasked value			;1*4
+pp21:
+ ld a,c						;1*4
  inc de						;1*4
- djnz putPixel2bit				;4*4
- ld a,ixl					;2
+ rlca
+ rlca
+ ld c,a
+ and $03
+ jr z,pp22
+ add a,b
+ ld (de),a
+pp22:
+ ld a,c
+ inc de
+ rlca
+ rlca
+ ld c,a
+ and $03
+ jr z,pp23
+ add a,b
+ ld (de),a
+pp23:
+ ld a,c
+ inc de
+ rlca
+ rlca
+ ld c,a
+ and $03
+ jr z,pp24
+ add a,b
+ ld (de),a
+pp24:
+ ld a,b
+ inc de						
  inc hl						;1
- jp putPixelReturn				;5
+ jp putPixelReturn 				;5
+
 
 ;a=pal
 ;hl=data ptr
@@ -371,27 +418,28 @@ trans2h:
 skipRow2h:
  inc hl
  djnz skipRow2h
- jp putPixelReturn
+ jp putPixelReturn	
  
 ;a=palette ofs
 ;hl=data ptr
 ;de=vram ptr
+;speed: ~13cc/px (106cc/8px)
 putPixel1bpp: 
- ld c,(hl)
- ld b,8
+ ld c,(hl)					;2
+ ld b,8						;2
  ;new:
  ;c=bit data
  ;b=pixel count
-putPixelBit:
- rlc c ;get bit from c
- ;if bit is zero, pixel is transparent.
- jr nc, noPutPixelBit ;skip to inc location
- ld (de),a ;save to location
+putPixelBit:					
+ rlc c ;get bit from c				;2*8
+ ;if bit is zero, pixel is transparent.		;
+ jr nc, noPutPixelBit ;skip to inc location	;3*8
+ ld (de),a ;save to location			;2*8
 noPutPixelBit:
- inc de ;next
- djnz putPixelBit
- inc hl ;done with this byte of data
- jp putPixelReturn
+ inc de ;next					;1*8
+ djnz putPixelBit				;4*8
+ inc hl ;done with this byte of data		;1
+ jp putPixelReturn				;5
  
 put1bppHalfScale:
  push bc
@@ -1097,6 +1145,7 @@ getBlockSizeBytes:
 getBlockSizeBytesLoop:
  srl a
  djnz getBlockSizeBytesLoop
+ ;TODO: adjust for uneven division?
  ret
  
 ;input:

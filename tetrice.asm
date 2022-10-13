@@ -316,11 +316,21 @@ shiftOldData:
  ld de, oldData
  ld bc, curDataSize
  ldir
- 
+ ;note: can probably combine these into one copy
  ld hl, curData
  ld de, midData
  ld bc, curDataSize
  ldir
+ 
+ ld hl, midTempData
+ ld de, oldTempData
+ ld bc, curDataSize
+ ldir 
+ 
+ ld hl, tempData
+ ld de, midTempData
+ ld bc, curDataSize
+ ldir 
  ret
  
 userUpdate:
@@ -455,7 +465,7 @@ noNewBlock:
 skipEndCheck:
  
  xor a
- ld (PSS+444),a
+; ld (PSS+444),a
 checkGravity:
  ld a,(level)
  dec a
@@ -482,12 +492,15 @@ checkGravityLoop:
  sbc hl,de
  jr c, noDropGravity
  ;if carry, hl was less than 65536, so timer's not done
- ld a,(PSS+444)
- inc a
- ld (PSS+444),a
+; ld a,(PSS+444)
+; inc a
+; ld (PSS+444),a
  ld (timerT),hl
+ ld ix,curData
  call checkBlockDown
- jr checkGravityLoop ;must check for more than 1 row/frame
+ ld a,(lockTimer)
+ cp LOCK_DISABLE 
+ jr z, checkGravityLoop ;must check for more than 1 row/frame if not locking
 noDropGravity:
 ;drops are done/unneeded
 
@@ -502,6 +515,7 @@ dropReturn:
  call incGarbage
  
  ;check if lock
+
  ld a,(lockTimer)
  cp LOCK_DISABLE
  jr z, skipLockCheck
@@ -526,6 +540,7 @@ hardDropLoop:
  inc hl
  ld (score),hl
  ld hl,0
+ ld ix,curData
  call checkBlockDown
  jr hardDropLoop
 hdrop:
@@ -534,7 +549,6 @@ hdrop:
  ld ix,(refScore)
  res redrawObjBit, (ix+iDataType)
  jr dropReturn
- ret
  
 userDrop:
  ld a,(lockTimer)
@@ -549,6 +563,7 @@ userDrop:
 drop:
  ld hl,0
  ld (timerT),hl
+ ld ix,curData
  call checkBlockDown
  jr dropReturn
  
@@ -651,6 +666,9 @@ checkLines:
  
  ld ix, (refLines)
  res redrawObjBit, (ix+iDataType)
+ 
+ ld hl, drawObjectsNoReset
+ ld (smcDrawObjectsType), hl
  
  ld hl, curStatus
  set csClearLineBit, (hl) ;clear bit 
@@ -971,11 +989,12 @@ newBlock:
  jr z, noRedrawPreview 
  ld hl,(refPreview)
  res redrawObjBit, (hl)
+ ld hl, DrawObjectsNoReset
+ ld (smcDrawObjectsType), hl
 noRedrawPreview:
 
  ld a,4
  ld (curX),a
- ld a,4
  ld (curY),a
  xor a
  ld (curR),a
@@ -1009,9 +1028,10 @@ noRedrawPreview:
  add ix, de
  ld a,(curT) ;ensure copied blockdata is CORRECT?
  call copyBlockData
- 
+
+ ld ix,curData 
  call checkBlockDownOK
- cp 0
+ or a,a
  call z,gameEnd
  ;if block check fails immediately, it's a top out
  ret
@@ -1188,9 +1208,9 @@ noTRotate:
  set csWallKicked,(hl)
 notWallKicked:
  
- ld a, LOCK_DISABLE
- ld (lockTimer),a
- call checkBlockDownOK
+ ld ix,curData
+ ;there was a rotate: set lock timer if needed
+ call setLockTimerIfGrounded
  ret
 
 noRotation:
@@ -1215,9 +1235,7 @@ smcNoRotateRXY=$+1
  jp nz, checkBlocksRotate
 
  pop hl ;unneeded.
- ld a, LOCK_DISABLE
- ld (lockTimer),a
- call checkBlockDownOK
+ call setLockTimerIfGrounded 
  ret
  
 rotationTempHL:
@@ -1319,83 +1337,95 @@ checkBlocksToSide:
  
  ;check if block needs lock
 blockTooFar:
- ld a, LOCK_DISABLE
- ld (lockTimer),a
- call checkBlockDownOK
+ call setLockTimerIfGrounded
  ret
 
 ;checks if the block CAN move down AND moves the block if it can.
 ;note: affects lock timer
+;ix = curData
 checkBlockDown:
+ push ix
  call checkBlockDownOK
- cp 0
+ pop ix
+ or a,a
  ret z ;check block down failed: no decrement
- call lowerBlock
+ inc (ix+curYOfs)
  ld hl,curStatus ;last move wasn't rotate
  res csRotateTBit,(hl)
- 
- call checkBlockDownOK ;check if it can lower again for the purpose of lock timing.
- 
+
+ call setLockTimerIfGrounded
  ret
 
 ;checks if the block CAN move down without actually moving it
 ;note: affects lock timer
+;input: ix = curdata struct
 checkBlockDownOK:
- ld hl, curBlock + 1
- ld b,4
+ lea hl, ix+curBlockOfs+1 ;ptr to y coord of curdata
+ ld b,4 ;TODO: make flexible
 checkBlocksInDown:
- ld c, (hl)
- ld a, (curY)
- add a,c
+ ld a, (ix+curYOfs)
+ add a,(hl)
  cp fieldHeight-1
  jr z, blockTooFarDown
  push bc
  push hl
  ld c,(hl)
  dec hl
- ld b,(hl) ;(b,c) = (ofsx, ofsy)
- ld a,(curX)
- add a,b
+; ld b,(hl) ;(b,c) = (ofsx, ofsy)
+ ld a,(ix+curXOfs)
+ add a,(hl)
  ld h,a
- ld a,(curY)
+ ld a,(ix+curYOfs)
  add a,c
  ld l,a
- inc l
+ inc l ; +1 to y coord
  call checkBlock
  cp NULL_BLOCK
  pop hl
  pop bc
  jr nz,blockTooFarDown ;block is hit
  inc hl
- inc hl
+ inc hl ;to next coord pair
  djnz checkBlocksInDown
  ld a,1 ;success
  ret
 
 blockTooFarDown:
+ xor a
+ ret
+
+
+;sets the lock timer if block is grounded
+setLockTimerIfGrounded:
+ ld a,LOCK_DISABLE
+ ld (lockTimer),a
+ ld ix, curData
+ call checkBlockDownOK
+ or a,a
+ ret nz ;success -> no lock timer
+ ;fail: fallthrough and set lock timer
+ 
+;sets the lock timer if lock was previously disabled
+setLockTimer:
  ld a,(lockTimer)
  cp LOCK_DISABLE
- jr nz,noLockRefresh
+ ret nz
+;sets the lock timer to the lock delay
+forceLockTimer:
  ld a,(lockDelay)
  cp 2
  jr nc,nonzeroDelay
  ld a,2 ;lock delay 0 and 1 are infinite, cool
 nonzeroDelay:
  ld (lockTimer),a
-noLockRefresh:
- ld a,0
  ret
  
-lowerBlock:
- ld a,(curY)
- inc a
- ld (curY),a
- ret 
-
 ;inputs: 
 ;h = x
 ;l = y
 ;returns: a=block  hl=location
+;destroy: de=field
+;TODO: variable field width?
 checkBlock:
  ld a,l ;y
  ld d,a ;y
@@ -1416,7 +1446,6 @@ checkBlock:
 ;inputs:
 ;a = block type
 copyBlockData:
- push af ;ld d,a ;save d for later
  ld hl, blockData
  dec a
  add a,a ;x2
@@ -1429,16 +1458,6 @@ copyBlockData:
  ld de, curBlock
  ld bc, blockDataSize
  ldir ;copied to current block mem
- 
- pop af ;get a again
- ld hl, (drefBlocks)
- add a,a
- ld de,0
- ld e,a
- add hl,de ;blockGraphic + ofs
- ld de, curBlock + blockDataSize
- ld bc, blockGraphicSize
- ldir
  ret
 
 randbag = minoTypes + bag1Ofs
@@ -1556,14 +1575,18 @@ randXOR:
  
 drawGame:
  ld ix,(drefIInfo)
- call drawObjectsNoReset
+smcDrawObjectsType=$+1
+ call drawObjects ; NoReset
  call updateMino
 
  call swapVRamPTR
+
+ ld hl,drawObjects
+ ld (smcDrawObjectsType),hl
  
- ld ix,(drefIInfo)
- call drawObjects
- call updateMino 
+; ld ix,(drefIInfo)
+; call drawObjects
+; call updateMino 
  ret
 
 ; resets all except things that should be disabled for this mode
@@ -1587,6 +1610,12 @@ previewDraw:
 ;checks if mino update is needed
 ;if yes, draws mino
 updateMino:
+ ;must be done before drawGhostMino to not keep old data in temp
+ ld hl, curdata
+ ld de, tempData
+ ld bc, curDataSize
+ ldir
+
  ld hl, curStatus
  bit csClearLineBit, (hl)
  ret nz
@@ -1602,6 +1631,7 @@ updateMino:
  ret nz
  
  call eraseOldMino
+ call drawGhostMino ;also erases old ghost
  call drawNewMino
  ret
  
@@ -1704,20 +1734,59 @@ setBestScore:
  ret
  
 eraseOldMino:
- ld hl, curStatus + midOfs
+ ld hl, curStatus + oldOfs
  bit csLockedBit, (hl)
  ret nz ;don't clear a locked mino
- 
+;bit csClearLineBit, (hl)
+;ret nz ;don't erase a mino that cleared lines
+
  ld ix,(refField)
- ld de, midData
+ ld de, oldData
  call NullPTRMino
  ret
  
 drawNewMino:
  ld ix,(refField)
+ ld hl,curStatus + midOfs
+ bit csLockedBit, (hl)
+ ld de, midData
+ call nz, drawPTRMino
+ 
+ ld ix,(refField)
  ld de, curData
- call drawPTRMino
+ call drawPTRMino ;likely not actually visible anyways
  ret
+
+drawGhostMino:
+ ld hl, curStatus + oldOfs ;can't use oldTempData due to missing changes
+ bit csLockedBit, (hl)
+ jr nz,skipEraseGhost ;only erase not locked blocks
+;bit csClearLineBit, (hl)
+;jr nz,skipEraseGhost ;don't erase a mino that cleared lines
+
+ ld ix, (refField)
+ ld de, oldTempData
+ call nullPTRMino 
+skipEraseGhost: 
+
+ ld ix, tempData
+
+lowerGhost:
+ push ix
+ call checkBlockDownOK
+ pop ix
+ or a,a
+ jr z,doneLowering ;check block down failed: no decrement
+ inc (ix+curYOfs) ;lower block
+ jr lowerGhost
+doneLowering:
+ 
+ ld ix, (refField)
+ ld de, tempData
+ ld h, 1<<drawMinoDark
+ call drawMinoObject
+ ret
+
  
 ;inputs:
 ;a=type
