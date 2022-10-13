@@ -240,7 +240,7 @@ gameText:
 SSSInfo = itemsInfo
 
 menuObjData:
- .db 4
+ .db 5
  ;background
  .db typeBox
  .dw 0 ;x
@@ -269,23 +269,16 @@ menuObjData:
  .db 1
  .dl logoSprite 
  .db 7, 14
- ;test
- ;.db typeSprite2bpp
- ;.dw 100
- ;.db 100
- ;.db 0
- ;.dl test
- ;.db 4, 16
- 
-;test: ;2bpp, 16x16 if you were wondering
-;.db $15, $55, $61, $54, $40, $00, $24, $02
-;.db $40, $00, $24, $02, $40, $00, $24, $02
-;.db $40, $00, $26, $02, $40, $00, $22, $a8
-;.db $40, $00, $25, $56, $40, $00, $24, $02
-;.db $40, $00, $24, $02, $40, $00, $24, $02
-;.db $a0, $00, $90, $02, $5a, $00, $90, $02
-;.db $45, $aa, $40, $02, $40, $56, $40, $02
-;.db $40, $02, $40, $0a, $2a, $a8, $6a, $a8
+;version string
+ .db typeString
+ .dw 256
+ .db 216
+ .db textColor
+ .dl versionString
+ .db 0, 0
+
+versionString:
+ .db "v0.6",0
 
 cursorString:
  .db "*",0
