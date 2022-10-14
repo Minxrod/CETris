@@ -271,14 +271,11 @@ menuObjData:
  .db 7, 14
 ;version string
  .db typeString
- .dw 256
+ .dw -versionStringSize * 8 + 320
  .db 216
  .db textColor
  .dl versionString
  .db 0, 0
-
-versionString:
- .db "v0.6",0
 
 cursorString:
  .db "*",0
@@ -560,9 +557,11 @@ modeData:
  .db rRetro, rNull, rLines, rScore ;retro
  .db rMarathon, rNull, rLines, rTime ;line race
  .db rMarathon, rGenerated, rRow0, rTime ;dig/excavate
- .db rMarathon, rRising, rNull, rLine
+ .db rMarathon, rRising, rNull, rLine ;dig challenge
  .db rMarathon, rCascadeExtra, rLines, rScore ;cascade
+ .db rMarathon, rNull, rCountdown, rLine ;ultra
  
+
 setModeFromE:
  ld b,e
  ld de,0

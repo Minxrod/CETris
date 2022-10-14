@@ -1761,6 +1761,10 @@ drawNewMino:
  ret
 
 drawGhostMino:
+ ld hl, rules + rfBasic
+ bit rbitGhostEnabled, (hl)
+ ret z ;ghost is disabled
+ 
  ld hl, curStatus + oldOfs ;can't use oldTempData due to missing changes
  bit csLockedBit, (hl)
  jr nz,skipEraseGhost ;only erase not locked blocks

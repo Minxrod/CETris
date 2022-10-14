@@ -133,8 +133,9 @@ rbitPreviewEnabled 	equ	 3
 rbitHoldEnabled 	equ	 4
 rbitHardDropEnabled 	equ	 5
 rbitBagEnabled 	equ	 6
+rbitGhostEnabled	equ	 7
 
-rbitunusedextra 	equ	 0
+rbitUnusedExtra 	equ	 0
 rbitGarbageRising 	equ	 1
 rbitGarbageInitial 	equ	 2
 rbitCascadeGravity 	equ	 3
@@ -143,6 +144,7 @@ rbitCascadeAnimation 	equ	 4
 rbitLinesClear 	equ	 0
 rbitRow0Clear 	equ	 1 ;for garbage/generated games
 rbitCountdown 	equ	 2 ;timed survival games
+rbitGarbageClear	equ	 3
 
 rbitHighScore 	equ	 0
 rbitLowTime 	equ	 1
@@ -156,6 +158,7 @@ rPreview 	equ	 1 << rbitPreviewEnabled
 rHold 	equ	 1 << rbitHoldEnabled 
 rHardDrop 	equ	 1 << rbitHardDropEnabled
 rBag 	equ	 1 << rbitBagEnabled
+rGhost	equ	 1 << rbitGhostEnabled
 
 rUnused 	equ	 1 << rbitunusedextra
 rRising 	equ	 1 << rbitGarbageRising
@@ -166,12 +169,13 @@ rCascadeAnim 	equ	 1 << rbitCascadeAnimation
 rLines 	equ	 1 << rbitLinesClear
 rRow0 	equ	 1 << rbitRow0Clear
 rCountdown 	equ	 1 << rbitCountdown
+rGarbage	equ	 1 << rbitGarbageClear
 
 rScore 	equ	 1 << rbitHighScore
 rTime 	equ	 1 << rbitLowTime
 rLine 	equ	 1 << rbitHighLine 
 
-rMarathon 	equ	 rGame | rSRS | rPreview | rHold | rHardDrop | rBag
+rMarathon 	equ	 rGame | rSRS | rPreview | rHold | rHardDrop | rBag | rGhost
 rRetro 	equ	 rGame
 
 rCascadeExtra 	equ	 rCascade | rCascadeAnim
