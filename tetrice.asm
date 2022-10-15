@@ -120,7 +120,10 @@ initGame:
  
  ld hl,0
  ld (score),hl ;don't keep old score/time!
+ bit rbitCountdown, (ix+rfWin)
+ jr nz, noResetTimer
  ld (globaltimer),hl
+noResetTimer:
  call setHighScore
  
  ld a,NULL_BLOCK
@@ -156,9 +159,10 @@ game:
  call update
  call drawGame
  
- ld hl,(globalTimer)
- inc hl
- ld (globalTimer),hl
+ ld hl,rules + rfWin
+ bit rbitCountdown, (hl)
+ call nz, timerDown ;timer decreases
+ call z, timerUp ;timer increases
  
  ld hl, (refTimer) ;time updates every frame
  res redrawObjBit, (hl)
@@ -169,6 +173,26 @@ game:
  bit rBitGameCont, (ix+rfBasic)
  jr nz, game ;jump if nz: bit is 1, game is going
  jp gameEndInit
+
+timerDown:
+ ld hl,(globalTimer)
+ dec hl
+ ld (globalTimer),hl
+ xor a
+ or h
+ or l
+ ret nz ;if hl nonzero, return (also prevents timerUp from being called)
+ ld hl, rules + rfBasic
+ res rbitGameCont, (hl) ;game ends when reaching zero
+ set rbitGameWon, (hl) ;game is won if you survived to here
+ or 1 ;resets zero so timerUp isn't called
+ ret
+
+timerUp:
+ ld hl,(globalTimer)
+ inc hl
+ ld (globalTimer),hl
+ ret
 
 initField:
  ld hl,field
@@ -235,7 +259,7 @@ backAgainGenerate: ;try again with new ofs here
  sbc hl,de ;fieldptr +ofs -ofs
  cp NULL_BLOCK ;block is empty
  jr nz, tryAgainGenerate ;isn't an empty block, try again
- ld a,7
+ ld a,7 ;garbage block?
  add hl,de
  ld (hl),a ;counting loop
  pop bc

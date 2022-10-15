@@ -403,7 +403,7 @@ selectModeMenu:
  .db 8
  .db textColor
  .dl modeText
- .db 18, 2 ;# items, cursorID within menuObjData
+ .db 19, 2 ;# items, cursorID within menuObjData
  ;cursor
  .db typeString
  .dw 0
@@ -431,6 +431,7 @@ modeText:
 .db "CASCADE-150",0
 .db "CASCADE-200",0
 .db "CASCADE-ENDLESS",0
+.db "ULTRA-3",0
 modeJumps:
  jp setupGame ;prev menu
  ;note: ld a,x/jr setLines = 4byte alignment
@@ -470,7 +471,9 @@ modeJumps:
  jr setCascade
  ld a,0
  jr setCascade
- 
+ ld a,0
+ jr setUltra 
+
 setMarathon:
  ld e,0
  call setModeFromE
@@ -506,6 +509,13 @@ setCascade:
  call setModeFromE
  jr setLines
  
+setUltra:
+ ld e,6
+ call setModeFromE
+ ld hl,3*60*60 ;3 minutes in frames
+ ld (globalTimer),hl
+ jr slToMenu
+
 setLines:
  cp 0
  jr z, setNoWin
@@ -559,8 +569,7 @@ modeData:
  .db rMarathon, rGenerated, rRow0, rTime ;dig/excavate
  .db rMarathon, rRising, rNull, rLine ;dig challenge
  .db rMarathon, rCascadeExtra, rLines, rScore ;cascade
- .db rMarathon, rNull, rCountdown, rLine ;ultra
- 
+ .db rMarathon, rNull, rCountdown, rScore ;ultra
 
 setModeFromE:
  ld b,e
