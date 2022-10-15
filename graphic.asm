@@ -1042,14 +1042,29 @@ setVarPTR:
 ;modified by setNumber.
 ;or, what is being "selected."
 
+setPtrFromObj:
+ ld hl,(ix+iDataPTR)
+ ld (setVarPTR),hl
+ jr setNumberReturn
+
+;input:
+;ix = redraw obj ptr
+;hl = pointer to variable (for objects not typeNumber(8))
+;a = max number + 1
 setNumber:
  ;ix points to data
  ld (numberMax),a
  ld (setNumberPTR),ix
-
- ld hl,(ix+iDataPTR)
- ld (setVarPTR),hl ;points to variable to set
  
+ ld a,(ix+iDataType)
+ cp typeNumber8
+ jr z, setPtrFromObj ; set modified number from object's PTR attribute
+ cp typeNumber
+ jr z, setPtrFromObj
+ ; if not of number type, set ptr manually
+ ld (setVarPTR),hl ;points to variable to set
+setNumberReturn: 
+
  ld a,(hl) ;get default/previous from memory
  ld (numberSelection),a
  
@@ -1123,11 +1138,6 @@ setNumberFinal: ;just wait for confirm/back to be released, then end
  call waitNoButton
  ret ;return from setNumber call
 
-;input:
-;ix = obj data ptr
-drawMapWithBG:
- ld hl,(ix+iDataPTR)
- 
 ;input:
 ;a = block size (in pixels) [0,127]
 ;b = bits/pixel [0,3]

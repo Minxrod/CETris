@@ -396,7 +396,7 @@ selectModeMenu:
  .db 0 ;y
  .db 9 ;color
  .dl 160 ;width
- .db 10, 160 ;bordercolor, height
+ .db 10, 168 ;bordercolor, height
  ;menu text
  .db typeMenu
  .dw 8
@@ -589,7 +589,7 @@ setModeFromE:
  ret
  
 optionsMenuData:
- .db 6
+ .db 5
 ;background box
  .db typeBox
  .dw 0 ;x
@@ -618,24 +618,41 @@ optionsMenuData:
  .db textColor
  .dl cursorString
  .db 0, 0
-;theme
+;themeSelect
 themeSelection:
+ .db typeCompound
+ .dw 0
+ .db 0
+ .db 0
+ .dl themeSelectionCompound
+ .db 3, 0
+
+;this allows for live preview using the compound as the selectNumber redraw object
+themeSelectionCompound:
  .db typeNumber
  .dw 56
  .db 16
  .db textColor
  .dl theme
  .db 3, 18
+previewBGBox:
+ .db typeBox
+ .dw 96
+ .db 18
+ .db 2
+ .dl 64
+ .db 3, 176
 ;preview
-previewTheme:
+previewThemeMino:
  .db typeCustom
- .dw 100
+ .dw 116
  .db 80  ;will be overrode by drawPreviewMino
  .db demoTOfs
  .dl drawPreviewMinos
  .db 0, 0
  
 drawPreviewMinos:
+ call applyTheme
  ld b,7
 dPMLoop:
  push bc
@@ -644,7 +661,7 @@ dPMLoop:
  ld c,24
  mlt bc
  ld a,c
- ld (previewTheme+iDataY),a
+ ld (previewThemeMino+iDataY),a
 ;at the time of writing ix is preserved by dMFTW
  call drawMinoFromTypeWrapper
  pop bc
@@ -666,6 +683,7 @@ controlMenu:
 setTheme:
  ld ix,themeSelection
  ld a,12
+ ld hl,theme
  call jptSetNumber
  
  call applyTheme
