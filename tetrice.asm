@@ -1013,7 +1013,24 @@ newBlock:
  ld hl, DrawObjectsNoReset
  ld (smcDrawObjectsType), hl
 noRedrawPreview:
+ 
+ ld hl,rules
+ bit rbitBagEnabled,(hl)
+ jr nz, bagEnabled
+ 
+newBlockAgain:
+ call rand
+ ld a,e
+ and $07
+ cp RANDOM_NULL
+ jr z, newBlockAgain
+ jr noBag
+bagEnabled:
+ call getNextBagItem
+noBag:
+ ld (curT),a
 
+createBlockShared:
  ld a,4
  ld (curX),a
  ld (curY),a
@@ -1025,20 +1042,6 @@ noRedrawPreview:
  ld a,LOCK_DISABLE
  ld (lockTimer),a
  
- ;something's kinda funny here.
- ;newBlockAgain:
- ;ld hl,rules
- ;bit rbitBagEnabled,(hl)
- ;call z, rand ;if bag is off, use regular random
- ;and $07
- ;cp RANDOM_NULL
- ;jr z,newBlockAgain
- ;ld hl,rules
- ;bit rbitBagEnabled,(hl)
- 
- call getNextBagItem ;if bag enabled, use bag random
- 
- ld (curT),a
  ld ix,blockData
  ld d,a
  add a,a
@@ -1059,28 +1062,8 @@ noRedrawPreview:
  
 ;a=block type
 determinedBlock:
- push af
- ld a,5
- ld (curX),a
- ld a,4
- ld (curY),a
- xor a
- ld (curR),a
- ld (curStatus),a
- ld (lockTimer),a
- pop af
  ld (curT),a
- ld ix,blockData
- ld d,a
- add a,a
- add a,a
- add a,a
- ld de,0
- ld e,a
- add ix, de
- ld a,(curT) ;ensure copied blockdata is CORRECT?
- call copyBlockData
- ret
+ jr createBlockShared
  
 ;inputs:
 ;a = $44 -> neg x
