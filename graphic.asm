@@ -1361,6 +1361,8 @@ resetTimer:
  ld (ix+buttonTimer),a
  ret
 
+checkKeyHeld:
+ ld a,(ix+buttonID)
 checkKeyA:
  ld de,0
  ld e,a

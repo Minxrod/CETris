@@ -161,10 +161,10 @@ game:
  jp handleDelays
 noDelays:
 
- call userUpdate
  call update
-waitForClear:
-waitForSpawn:
+ call userUpdate
+ 
+skipGameUpdate:
  call drawGame
  
  ld hl,rules + rfWin
@@ -197,8 +197,15 @@ noClearTimer:
  dec a
  ld (spawnTimer),a
  jr waitForSpawn
-noSpawnTimer
+noSpawnTimer:
  jr noDelays
+
+waitForClear:
+waitForSpawn:
+;waiting for something or other
+;check for instant actions and DAS update in ARE 
+ call userInstantUpdate 
+ jr skipGameUpdate
 
 timerDown:
  ld hl,(globalTimer)
@@ -386,6 +393,37 @@ shiftOldData:
  ld bc, curDataSize
  ldir 
  ret
+
+userInstantUpdate:
+ ld ix,buttonLeft
+ call checkKeyDown 
+ ld ix,buttonRight
+ call checkKeyDown 
+;results discarded, used to update button timers for DAS
+ 
+ xor a
+ ld (queuedAction),a ;clear any possibly queued moves
+ ld ix,buttonHold
+ call checkKeyHeld
+ jr nc, skipQueueHold
+ ld hl,queuedAction
+ set qaHold,(hl)
+skipQueueHold:
+;this happened naturall because of button timings
+; ld ix,buttonRotateLeft
+; call checkKeyHeld
+; jr nc, skipQueueRL
+; ld hl,queuedAction
+; set qaRotateLeft,(hl)
+;skipQueueRL: 
+;
+; ld ix,buttonRotateRight
+; call checkKeyHeld
+; jr nc, skipQueueRR
+; ld hl,queuedAction
+; set qaRotateRight,(hl)
+;skipQueueRR:
+ ret
  
 userUpdate:
  ld ix,buttonLeft
@@ -399,18 +437,31 @@ userUpdate:
  ld ix,buttonRotateLeft
  call checkKeyDown
  call c, checkRotationLeft
+;turns out unneeded due to button timing system
+;ld a,(queuedAction)
+;bit qaRotateLeft, a
+;call nz, checkRotationLeft
  
  ld ix,buttonRotateRight
  call checkKeyDown
  call c, checkRotationRight
+;ld a,(queuedAction)
+;bit qaRotateRight, a
+;call nz, checkRotationRight
  
  ld ix,buttonHold
  call checkKeyDown
  call c, hold
+ ld a,(queuedAction)
+ bit qaHold, a
+ call nz, hold
  
  ld ix,buttonPause
  call checkKeyDown
  call c, pause
+ 
+ xor a
+ ld (queuedAction),a
  ret
  
 pause:
@@ -655,9 +706,18 @@ lockAllBlocks:
  ld a,(spawnDelay)
  ld (spawnTimer),a
 
+
  ld b,8
 lockAnimLoop:
  push bc
+ ; probably erases a lot it doesn't need to
+ ld de, midOfs + curData
+ ld ix,(refField)
+ ld h,1<<drawMinoErase
+ push bc
+ call eraseOldMino
+ pop bc
+ 
  ld ix,(refField)
  ld de, curData
  ld h,0

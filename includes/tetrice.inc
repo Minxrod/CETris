@@ -97,8 +97,12 @@ lineClearInfo 	equ	 gameVars + 56 ;only needs one byte
 lcBackToBack 	equ	 0
 lcPreviousB2B 	equ	 1
 lcTSpin 	equ	 2 ;set even if no lines clear
+queuedAction	equ	 gameVars + 60 ;IHS, IRS
+qaHold	equ	 0
+qaRotateLeft	equ	 1
+qaRotateRight	equ	 2
 
-miscVars	equ	 gameVars + 60 ;420ish
+miscVars	equ	 gameVars + 64
 
 ;not the best location
 ;but I don't really know where to put this stuff
@@ -135,11 +139,16 @@ rbitHardDropEnabled 	equ	 5
 rbitBagEnabled 	equ	 6
 rbitGhostEnabled	equ	 7
 
-rbitUnusedExtra 	equ	 0
+;rbitUnusedExtra 	equ	 0
+rbitClearAnimation	equ	 0
 rbitGarbageRising 	equ	 1
 rbitGarbageInitial 	equ	 2
 rbitCascadeGravity 	equ	 3
 rbitCascadeAnimation 	equ	 4
+rbitLockAnimation	equ	 5
+rbitInstantHold		equ	 6
+rbitInstantRotate	equ	 7
+
 
 rbitLinesClear 	equ	 0
 rbitRow0Clear 	equ	 1 ;for garbage/generated games
@@ -160,11 +169,15 @@ rHardDrop 	equ	 1 << rbitHardDropEnabled
 rBag 	equ	 1 << rbitBagEnabled
 rGhost	equ	 1 << rbitGhostEnabled
 
-rUnused 	equ	 1 << rbitunusedextra
+;rUnused 	equ	 1 << rbitunusedextra
+rClearAnim	equ	 1 << rbitClearAnimation
 rRising 	equ	 1 << rbitGarbageRising
 rGenerated 	equ	 1 << rbitGarbageInitial
 rCascade 	equ	 1 << rbitCascadeGravity
 rCascadeAnim 	equ	 1 << rbitCascadeAnimation
+rLockAnim	equ	 1 << rbitLockAnimation
+rIHS		equ	 1 << rbitInstantHold
+rIRS		equ	 1 << rbitInstantRotate
 
 rLines 	equ	 1 << rbitLinesClear
 rRow0 	equ	 1 << rbitRow0Clear
