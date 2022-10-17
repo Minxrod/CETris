@@ -366,7 +366,7 @@ startMenuJumps:
  
 selectLev:
  ld ix, startMenuSelectLev
- ld a, 21
+ ld a, 51
  call jptSetNumber
  
  ;after setting number,

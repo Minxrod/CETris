@@ -87,7 +87,7 @@ linesToNextLevel 	equ	 gameVars + 12
 timerT 	equ	 gameVars + 16
 lockTimer 	equ	 gameVars + 20	;lock delay
 globalTimer 	equ	 gameVars + 24
-entryTimer	equ	 gameVars + 28	;ARE
+spawnTimer	equ	 gameVars + 28	;ARE
 clearTimer	equ	 gameVars + 32	;line clear timer
 highscore 	equ	 gameVars + 40
 garbageTimer 	equ	 gameVars + 44
@@ -98,7 +98,7 @@ lcBackToBack 	equ	 0
 lcPreviousB2B 	equ	 1
 lcTSpin 	equ	 2 ;set even if no lines clear
 
-miscVars	equ	 gameVars + 60
+miscVars	equ	 gameVars + 60 ;420ish
 
 ;not the best location
 ;but I don't really know where to put this stuff
@@ -106,7 +106,7 @@ saveDataPTR 	equ	 miscVars
 menuSelection 	equ	 miscVars + 4
 numberSelection 	equ	 miscVars + 8
 
-ruleVars = miscVars + 12 + 4 ;because rules uses -4 offset for some reason
+ruleVars = miscVars + 100 + 4 ;because rules uses -4 offset for some reason ;520ish
 
 ;data for various rules, stored as offset from rules
 ;garbage set
@@ -182,7 +182,9 @@ rCascadeExtra 	equ	 rCascade | rCascadeAnim
 
 lockDelay 	equ	 PSS + 760
 theme 	equ	 PSS + 764 ;precedes blockData
-blockData 	equ	 PSS + 768
+spawnDelay	equ	 PSS + 768
+clearDelay	equ	 PSS + 772
+blockData 	equ	 PSS + 776
 buttonData 	equ	 PSS + 1024
 blockGraphic 	equ	 PSS + 1280
 

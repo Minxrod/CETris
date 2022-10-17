@@ -114,10 +114,12 @@ initGame:
  set rbitGameCont, (ix+rfBasic) ;game is going
  res rbitGameWon, (ix+rfBasic) ;game not won
  
- ld a,0
+ xor a
  ld (lines),a
  ld (linesToNextLevel),a
- 
+ ld (clearTimer),a
+ ld (spawnTimer),a
+
  ld hl,0
  ld (score),hl ;don't keep old score/time!
  bit rbitCountdown, (ix+rfWin)
@@ -125,6 +127,7 @@ initGame:
  ld (globaltimer),hl
 noResetTimer:
  call setHighScore
+ call setDelay
  
  ld a,NULL_BLOCK
  ld (holdT),a
@@ -155,8 +158,13 @@ game:
  ;part of update code, essentially
  ;might move to update sometime
  
+ jp handleDelays
+noDelays:
+
  call userUpdate
  call update
+waitForClear:
+waitForSpawn:
  call drawGame
  
  ld hl,rules + rfWin
@@ -173,6 +181,24 @@ game:
  bit rBitGameCont, (ix+rfBasic)
  jr nz, game ;jump if nz: bit is 1, game is going
  jp gameEndInit
+
+handleDelays:
+ ld a,(clearTimer)
+ or a,a
+ jr z, noClearTimer
+ dec a
+ ld (clearTimer),a
+ jr waitForClear
+noClearTimer:
+
+ ld a,(spawnTimer)
+ or a,a
+ jr z, noSpawnTimer
+ dec a
+ ld (spawnTimer),a
+ jr waitForSpawn
+noSpawnTimer
+ jr noDelays
 
 timerDown:
  ld hl,(globalTimer)
@@ -625,8 +651,33 @@ lockAllBlocks:
  ;call newBlock
  ld hl, curStatus
  set csNewBlockBit,(hl) ;new block should be created
- 
+ ;delay spawn by some frames
+ ld a,(spawnDelay)
+ ld (spawnTimer),a
+
+ ld b,8
+lockAnimLoop:
+ push bc
+ ld ix,(refField)
+ ld de, curData
+ ld h,0
+ bit 1,b
+ jr z, skipDark
+ ld h,1<<drawMinoDark
+skipDark:
+ call drawMinoObject ;likely not actually visible anyways
+ call swapVRamPTR
+ pop bc
+ djnz lockAnimLoop
  ret
+
+lockAnimStart:
+ ld ix,(refField)
+ ld de, curData
+ ld h,1<<drawMinoDark
+ call drawMinoObject ;likely not actually visible anyways
+ ret
+
 gameEnd:
  ld ix,rules
  res rBitGameCont, (ix+0) ;game is not going
@@ -718,6 +769,10 @@ smcPointsPerLine = $+1
  add hl,de
  ld e,(hl)
  ld a,(level) ;level multiplier
+ cp 21
+ jr c, noLowerLevelScore
+ ld a,20
+noLowerLevelScore:
  ld d,a
  mlt de ;level * linesClear
  
@@ -756,10 +811,57 @@ noB2BBonus:
  ld hl, (level)
  inc hl
  ld (level),hl
+ 
+ call setDelay ;set delay changes for higher levels
 noLevelUp:
 noLinesClear:
 ;all of the above do not update when not cleared.
  ret
+
+setDelay:
+ ld a,(level)
+ ; calculate Clear delay decrease
+ ld hl,clearDelay
+ ld (hl),35
+ cp 21
+ jr c, noClearDelayDecrease
+ ld (hl),0
+ cp 51
+ jr nc, noClearDelayDecrease
+ ;20 < a < 50
+ neg
+ add a,50
+ ld (hl),a ;clear delay down by one per level past 20
+ ;this caps at about 10 frames delay for the base setup
+ ;which is entirely the fault of the rendering code and can't be easily lowered
+noClearDelayDecrease:
+ ld a,(level)
+ ld hl, delayCurveEnd
+;applies first delay possible, reading from the back
+untilFindLevelOrNone:
+ cp (hl)
+ jr nc, applyNewDelay ; a >= (hl), so apply the delay
+ dec hl
+ dec hl
+ dec hl
+ dec hl
+ jr untilFindLevelOrNone
+
+applyNewDelay:
+ inc hl
+ ld a,(hl)
+ ld (spawnDelay),a
+ inc hl
+ ld a,(hl)
+ ld (lockDelay),a 
+ inc hl
+ ld a,(hl)
+ ld (buttonLeft+buttonTimeStart),a
+ ld (buttonRight+buttonTimeStart),a
+ 
+noDelayDecrease:
+ ret
+
  
 updateB2B:
  ld hl,lineClearInfo
@@ -1588,6 +1690,9 @@ drawGame:
 smcDrawObjectsType=$+1
  call drawObjects ; NoReset
  call updateMino
+ ld hl, curStatus
+ bit csLockedBit, (hl)
+;call nz, lockAnimStart
 
  call swapVRamPTR
 
@@ -1760,11 +1865,13 @@ drawNewMino:
  ld hl,curStatus + midOfs
  bit csLockedBit, (hl)
  ld de, midData
- call nz, drawPTRMino
+ ld h,0
+ call nz, drawMinoObject
  
  ld ix,(refField)
  ld de, curData
- call drawPTRMino ;likely not actually visible anyways
+ ld h,0
+ call drawMinoObject ;likely not actually visible anyways
  ret
 
 drawGhostMino:
@@ -2054,19 +2161,12 @@ positiveBC:
 
 ;requires ix as obj data ptr
 ;de as setDataFromPTR ptr to curdata etc
-;also, nice
+;this function remains solely for the name joke
 nullPTRMino:
  ld h,1<<drawMinoErase
  call drawMinoObject
  ret
  
-;ix = obj data ptr
-;de = setDataFromPTR ptr
-drawPTRMino:
- ld h,0
- call drawMinoObject
- ret
-
 CETrisSavVar:
  .db AppVarObj, "CETrisSV", 0
  
@@ -2225,6 +2325,23 @@ speedCurve:
  .dl 4169, 5759, 8107, 11634, 17026
  .dl 25416, 38709, 60169, 95483, 154742
  .dl 256187, 433425, 749597, 1325716, 2398490
+
+delayCurve:
+; level, ARE, Lock, DAS
+; clear is handled by ~60-level, from ~40 to ~10
+; all units in frames aside from level
+ .db  1, 30, 30, 15
+ .db 21, 30, 30, 15
+ .db 26, 25, 25, 12
+ .db 31, 20, 20, 10
+ .db 36, 15, 15, 10
+ .db 41, 10, 15, 8
+ .db 51, 10, 15, 8
+ .db 61, 10, 10, 8
+ .db 71,  5, 10, 6
+ .db 81,  5,  8, 6
+delayCurveEnd:
+ .db 255, 0,  0, 0
 
 ;format: x ofs, y ofs, spriteID, palette
 ;I piece
