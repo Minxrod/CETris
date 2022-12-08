@@ -94,7 +94,7 @@ scoreInfo:
 .dw infoBoxX + 8 + 48
 .db infoBoxY + 8 + 0
 .db textColor
-.dl lockResets ;variables are saved in PSS
+.dl score ;variables are saved in PSS
 .db 8, boxColor ; size of number, bgcolor
 levelInfo:
 .db typeNumber
