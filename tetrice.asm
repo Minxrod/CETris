@@ -1204,6 +1204,7 @@ createBlockShared:
  ld a,4
  ld (curX),a
  ld (curY),a
+ ld (lowestY),a
  xor a
  ld (curR),a
  ld (curStatus),a ;important: reset all status bits
@@ -1521,7 +1522,7 @@ checkBlocksToSide:
  ret
  ;check if block needs lock
 blockTooFar:
- call setLockTimerIfGrounded
+ call notResetHasReset
  ret
 
 ;checks if the block CAN move down AND moves the block if it can.
@@ -1534,12 +1535,19 @@ checkBlockDown:
  or a,a
  ret z ;check block down failed: no decrement
  inc (ix+curYOfs)
- ld hl,curStatus ;last move wasn't rotate
- res csRotateTBit,(hl)
- 
+ res csRotateTBit,(ix+curStatusOfs)
+
+ ld hl,lowestY 
+ ld b,(ix+curYOfs)
+ ld a,(hl)
+ cp b
+ jr nc, notLowestY
+ ; curY > lowY
+ ld (hl),b
  xor a
  ld (lockResets),a ;if block successfully moves down, you get resets back
  
+notLowestY:
  call setLockTimerIfGrounded
  ret
 
@@ -1598,7 +1606,7 @@ resetLockTimer:
  jr z, notResetHasReset ; lock disabled, no reset needed
 ;reset wanted, lock timer active
  ld hl,lockResets
- ld a, 15 ; check if too many resets
+ ld a, 14 ; check if too many resets
  inc (hl) 
  cp (hl)
  jr c, notReset ; too many previous resets
@@ -1622,8 +1630,6 @@ setLockTimer:
  ret nz
 ;sets the lock timer to the lock delay
 forceLockTimer:
- ld hl, lockResets
- inc (hl) ; counts as first reset
  ld a,(lockDelay)
  cp 2
  jr nc,nonzeroDelay

@@ -102,8 +102,9 @@ qaHold	equ	 0
 qaRotateLeft	equ	 1
 qaRotateRight	equ	 2
 lockResets	equ	 gameVars + 64 ; move reset related
+lowestY		equ	 gameVars + 68 ; lowest Y level reached for this block
 
-miscVars	equ	 gameVars + 68
+miscVars	equ	 gameVars + 72
 
 ;not the best location
 ;but I don't really know where to put this stuff
