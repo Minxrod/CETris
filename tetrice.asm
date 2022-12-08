@@ -293,7 +293,7 @@ backAgainGenerate: ;try again with new ofs here
  sbc hl,de ;fieldptr +ofs -ofs
  cp NULL_BLOCK ;block is empty
  jr nz, tryAgainGenerate ;isn't an empty block, try again
- ld a,7 ;garbage block?
+ ld a,8 ;garbage block?
  add hl,de
  ld (hl),a ;counting loop
  pop bc
@@ -427,6 +427,10 @@ skipQueueHold:
  ret
  
 userUpdate:
+ ld hl, curStatus
+ bit csLockedBit, (hl)
+ ret nz ;if this frame locked, no other input matters
+ 
  ld ix,buttonLeft
  call checkKeyDown
  call c, checkMoveLeft
@@ -1204,6 +1208,7 @@ createBlockShared:
  ld (curR),a
  ld (curStatus),a ;important: reset all status bits
  ld (timerT),a
+ ld (lockResets),a
 
  ld a,LOCK_DISABLE
  ld (lockTimer),a
@@ -1282,8 +1287,8 @@ checkRotation:
  jr nz, notIKicks
  ld hl, kicksI
 notIKicks:
- cp 4 ; check O piece
- ret z
+ cp 4 ; check O piece 
+ jp z, rotateOSuccess
  push hl ;save table address
  
  call getTableOffset ;de=offset
@@ -1384,9 +1389,10 @@ noTRotate:
  set csWallKicked,(hl)
 notWallKicked:
  
+rotateOSuccess:
  ld ix,curData
  ;there was a rotate: set lock timer if needed
- call setLockTimerIfGrounded
+ call resetLockTimer ;setLockTimerIfGrounded
  ret
 
 noRotation:
@@ -1411,7 +1417,7 @@ smcNoRotateRXY=$+1
  jp nz, checkBlocksRotate
 
  pop hl ;unneeded.
- call setLockTimerIfGrounded 
+ ;call setLockTimerIfGrounded 
  ret
  
 rotationTempHL:
@@ -1503,7 +1509,7 @@ checkBlocksToSide:
  jp nz, blockTooFar ;collision with block
  djnz checkBlocksToSide
  
- ;here: no blocks too far left...
+ ;here: no blocks too far...
  ld a,(curX)
  add a,d
  ld (curX),a
@@ -1511,6 +1517,8 @@ checkBlocksToSide:
  ld hl,curStatus ;last move wasn't rotate
  res csRotateTBit,(hl)
  
+ call resetLockTimer
+ ret
  ;check if block needs lock
 blockTooFar:
  call setLockTimerIfGrounded
@@ -1528,12 +1536,14 @@ checkBlockDown:
  inc (ix+curYOfs)
  ld hl,curStatus ;last move wasn't rotate
  res csRotateTBit,(hl)
-
+ 
+ xor a
+ ld (lockResets),a ;if block successfully moves down, you get resets back
+ 
  call setLockTimerIfGrounded
  ret
 
 ;checks if the block CAN move down without actually moving it
-;note: affects lock timer
 ;input: ix = curdata struct
 checkBlockDownOK:
  lea hl, ix+curBlockOfs+1 ;ptr to y coord of curdata
@@ -1570,17 +1580,41 @@ blockTooFarDown:
  xor a
  ret
 
+notReset:
+ ld ix,curData
+ call checkBlockDownOK
+ or a,a
+ ld a, 1
+ jr z, notSafe ; block down not ok
+ ld a, LOCK_DISABLE
+notSafe: 
+ ld (lockTimer), a
+ ret
+
+;resets the lock timer (if reset are left)
+resetLockTimer:
+ ld a,(lockTimer)
+ cp LOCK_DISABLE
+ jr z, notResetHasReset ; lock disabled, no reset needed
+;reset wanted, lock timer active
+ ld hl,lockResets
+ ld a, 15 ; check if too many resets
+ inc (hl) 
+ cp (hl)
+ jr c, notReset ; too many previous resets
+;fallthrough to setLockTimerIfGrounded
 
 ;sets the lock timer if block is grounded
 setLockTimerIfGrounded:
  ld a,LOCK_DISABLE
  ld (lockTimer),a
+notResetHasReset:
  ld ix, curData
  call checkBlockDownOK
  or a,a
  ret nz ;success -> no lock timer
  ;fail: fallthrough and set lock timer
- 
+
 ;sets the lock timer if lock was previously disabled
 setLockTimer:
  ld a,(lockTimer)
@@ -1588,6 +1622,8 @@ setLockTimer:
  ret nz
 ;sets the lock timer to the lock delay
 forceLockTimer:
+ ld hl, lockResets
+ inc (hl) ; counts as first reset
  ld a,(lockDelay)
  cp 2
  jr nc,nonzeroDelay

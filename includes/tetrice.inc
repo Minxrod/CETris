@@ -101,8 +101,9 @@ queuedAction	equ	 gameVars + 60 ;IHS, IRS
 qaHold	equ	 0
 qaRotateLeft	equ	 1
 qaRotateRight	equ	 2
+lockResets	equ	 gameVars + 64 ; move reset related
 
-miscVars	equ	 gameVars + 64
+miscVars	equ	 gameVars + 68
 
 ;not the best location
 ;but I don't really know where to put this stuff
