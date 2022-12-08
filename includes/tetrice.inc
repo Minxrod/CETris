@@ -34,7 +34,7 @@ demoTOfs	equ	15
 
 holdT		equ	minoTypes + holdTOfs
 nextBag1	equ 	minoTypes + bag1Ofs
-nextBag2	equ	minoTypes + bad2Ofs
+nextBag2	equ	minoTypes + bag2Ofs
 demoT		equ	minoTypes + demoTOfs
 
 ;current mino data

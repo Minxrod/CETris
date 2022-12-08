@@ -135,6 +135,11 @@ noResetTimer:
  call initBag ;also initializes random I guess?
  call initField ;depends on RNG being seeded by initbag, which init's rng system
  
+ ld hl,curData
+ ld de,curData+1
+ ld bc,6*curDataSize
+ ld (hl),0
+ ldir ;zero out old blockdata (prevents ghosts)
  call newBlock
  
  ;first draw to set up screen
