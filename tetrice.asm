@@ -163,6 +163,7 @@ noDelays:
 
  call update
  call userUpdate
+; call queuedUpdate
  
 skipGameUpdate:
  call drawGame
@@ -452,18 +453,21 @@ userUpdate:
  ld ix,buttonHold
  call checkKeyDown
  call c, hold
- ld a,(queuedAction)
- bit qaHold, a
- call nz, hold
- 
+
  ld ix,buttonPause
  call checkKeyDown
  call c, pause
- 
- xor a
- ld (queuedAction),a
  ret
  
+;queuedUpdate:
+; ld a,(queuedAction)
+; bit qaHold, a
+; call nz, hold
+ 
+; xor a
+; ld (queuedAction),a
+; ret 
+
 pause:
  ld ix,buttonPause
  call waitNoButton
@@ -504,6 +508,9 @@ hold:
  ld ix,rules
  bit rbitHoldEnabled,(ix+0)
  ret z ;hold is disabled
+ ld hl, curStatus
+ bit csLockedBit,(hl)
+ ret nz ;don't hold on locking frame
 
  ld hl, curStatus
  bit csUsedHold,(hl)
@@ -520,25 +527,22 @@ hold:
  jr z, firstHold
  
  ;need to swap held block and current block using transfer memory
- ld a,(holdT)
- ld b,a
+ ld hl, holdT
+ ld b,(hl)
  ld a,(curT)
- ld c,a
+ ld (hl), a
  ld a,b
  ld (curT),a
- ld a,c
- ld (holdT),a
  
  ld a,(curT)
  call determinedBlock
- ld hl,curStatus
- set csUsedHold,(hl)
- ret
+ jr holdShared
 firstHold:
  ld a,(curT)
  ld (holdT),a
  
  call newBlock ;geneate a new block: nothing to load
+holdShared:
  ld hl,curStatus
  set csUsedHold,(hl)
  ret
@@ -632,8 +636,8 @@ skipLockCheck:
  ret
 
 hardDrop:
- ld ix,rules
- bit rbitHardDropEnabled,(ix+0)
+ ld hl,rules
+ bit rbitHardDropEnabled,(hl)
  ret z ;hard drop is disabled
 
 hardDropLoop:
