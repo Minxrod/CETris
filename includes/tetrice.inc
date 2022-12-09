@@ -3,6 +3,7 @@
 ;program specfic constants:
 LOCK_DISABLE 	equ	 -1
 NULL_BLOCK 	equ	 0
+NO_KEY_PRESSED	equ	 -1
 vRamSplitSize 	equ	 (vRamEnd - vRam) / 2 
 vRamSplit 	equ	 vRam + vRamSplitSize
 

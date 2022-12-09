@@ -604,17 +604,17 @@ drawTextBG:
 
 ;inputs: ix = data ptr
 drawText:
- ld hl,(ix+iDataPTR)
- push hl
- 
- ld de,0
+ or a,a
+ sbc hl,hl
+ ex de,hl
+ sbc hl,hl ;de,hl=0
+  
  ld e,(ix+iDataXL)
  ld d,(ix+iDataXH)
- ld hl,0
  ld l,(ix+iDataY) ;xy set
  ld a,(ix+iDataA) ;color
  ld c,(ix+iDataH) ;bg color 0=transparent
- pop ix ;this is now the string data ptr
+ ld ix,(ix+iDataPTR) ;this is now the string data ptr
 
  ;must be provided:
  ;ix - string data ptr
@@ -628,7 +628,7 @@ drawTextManual:
  ld (drawTextBG),a
 drawTextLoop:
  ld a,(ix)
- cp 0 ;check null-terminated string
+ or a,a ;check null-terminated string
  jr z,textLoopEnd ;end string before stuff on stack
  push ix ;string data ptr
  push hl
@@ -655,10 +655,10 @@ shiftCTXT:
  add ix,bc ;fontData + 64a (character)
 
  ld b,8
- ld c,8 ;size in PIXELS of char BACKGROUND width
+ ld c,b ;size in PIXELS of char BACKGROUND width
  
  ld a,(drawTextBG)
- cp 0
+ or a,a
  jr z,textTransBG
  push hl
  call clearSprite
@@ -750,11 +750,14 @@ drawSpriteObj:
  ld hl,(ix+iDataPTR)
  push hl ;ptr to sprite data
  
- ld hl,0
+ or a,a
+ sbc hl,hl
+ ex de,hl
+ sbc hl,hl
+ 
  ld h,a ;get bpp
  ld l,(ix+iDataY)
  
- ld de,0
  ld d,(ix+iDataXH)
  ld e,(ix+iDataXL)
  
@@ -770,31 +773,24 @@ drawSpriteObj:
  
 ;ix is ptr to input data
 drawBox:
- ld de,0
- ld d,(ix+iDataXH)
- ld e,(ix+iDataXL)
- ld hl,0
- ld l,(ix+iDataY)
+ xor a,a ;a=0 used later
+ sbc hl,hl
+ ex de,hl
+ sbc hl,hl
+ 
+ ld h,(ix+iDataXH)
+ ld l,(ix+iDataXL)
+ ld d,(ix+iDataY)
 
- push de
- ld h,0
- ld d,h ;save HL = Y
- ld e,l
- add hl,hl ;2y
- add hl,hl ;4y
- add hl,de ;5y
- add hl,hl ;10y
- add hl,hl ;20y
- add hl,hl ;40y
- add hl,hl ;80y
- add hl,hl ;160y
- add hl,hl ;320y
- pop de
- add hl,de ;320Y+X
+ add hl,de ; x + 256y
+ srl d
+ rr e
+ srl d
+ rr e
+ add hl,de ; x + 320y
  ld de, (vramOffPtr)
  add hl,de ;320Y+x+vRam
  
- ld de,320
  ld b,(ix+iDataH)
 drawBoxYLoop:
  push bc
@@ -819,7 +815,6 @@ drawBoxX:
  ld a,(ix+iDataW) ;border color
  ld (hl),a
  pop hl ;restore old gptr
- ld a,(ix+iDataW) ;border color
  ld (hl),a
  
  ld de,320
@@ -835,15 +830,15 @@ isBorder:
 ;intended to perform initial draw of menu data
 ;output: ix = beginning of jumps/end of menu text
 drawMenu:
- ld b,(ix+iDataW)
- 
  ld hl,(ix+iDataPTR)
  push hl
  
  ld b,(ix+iDataW) ; # items
- ld hl,0
+ or a,a
+ sbc hl,hl
+ ex de,hl
+ sbc hl,hl
  ld l,(ix+iDataY)
- ld de,0
  ld d,(ix+iDataXH)
  ld e,(ix+iDataXL) ;de, hl is (X,Y) coords
  
@@ -878,7 +873,7 @@ cursorPTR:
 ;ix is ptr to active display menudata
 activeMenu:
  call clearLCD
- ld a,0
+ xor a
  ld (menuSelection),a
  
  ld (menuDataPTR),ix
@@ -892,7 +887,7 @@ menuScanMenu:
  cp typeMenu
  jr nz,menuScanMenu
  ld de,-iDataSize
- add ix,de ;ix - iDataSize
+ add ix,de ;ix - iDataSize ;z set => c reset
  ;ix points to a typeMenu object
  ld (menuPTR),ix
  
@@ -901,18 +896,18 @@ menuScanMenu:
 scanToMenuJumps:
  ld a,(hl)
  inc hl
- cp 0
+ or a,a
  jr nz,scanToMenuJumps ;jump no dec if not end of string
  djnz scanToMenuJumps
  ;hl points to jump table
  ld (smcLoadJumpTable+1),hl
  
- ld b,(ix+iDataH)
- ld c,iDataSize
- mlt bc ;bc=size*cursorelemid
+ ld d,(ix+iDataH) 
+ ld e,iDataSize
+ mlt de ;de=size*cursorelemid
  ld hl,(menuDataPTR)
  inc hl
- add hl,bc ;hl=ix+size*cursorID or, offset to cursor data
+ add hl,de ;hl=ix+size*cursorID or, offset to cursor data
  ld (cursorPTR),hl
  
  ;wait for no button forward or back through menu
@@ -966,39 +961,40 @@ menuDraw:
  jr menuLoop
  
 menuUp:
- ld a,(menuSelection)
- cp 0
+ ld hl,menuSelection
+ ld a,(hl)
+ or a,a ;cp 0
  jr z, menuDraw ;don't go past zero
- dec a
- ld (menuSelection),a
+ dec (hl)
  jr menuDraw
  
 menuDown:
- ld a,(menuSelection)
+ ld hl,menuSelection
+ ld a,(hl)
  inc a
  ld ix,(menuPTR)
  cp (ix+iDataW) ;# items
  jr nc, menuDraw ;don't go past end of list
- ld (menuSelection),a
+ ld (hl),a
  jr menuDraw
 
 amenuEnd:
- ;uh
- ld a,$FF
- ld (menuSelection),a ;yeah
+ ;use first option
+ ld a,-1 
+ ld (menuSelection),a
  
 menuSelect: 
  ld de,0
  ld a,(menuSelection)
  inc a
- ld e,a
- 
+ add a,a
+ add a,a ;4a
+ ld e,a ;max selection is 64
+;this is fine because menus can't render that large anyway 
+
 smcLoadJumpTable:
  ld hl,$000000 ;this will be replaced
- add hl,de
- add hl,de
- add hl,de
- add hl,de
+ add hl,de ; menuJumps + 4 * selection
  
  jp (hl)
  
@@ -1098,25 +1094,29 @@ setNumberLoop:
  jr setNumberLoop ;only redraw if something happens
  
 setNumDown:
- ld a,(numberSelection)
- dec a
- cp 255
+ ld hl,numberSelection
+ ld a,(hl)
+ or a,a
  jr z, setNumDraw ;don't dec past 0
- ld (numberSelection),a
+ dec (hl)
  jr setNumDraw
  
 setNumUp:
+ ld hl,numberSelection
  ld a,(numberMax)
  ld b,a
- ld a,(numberSelection)
+ ld a,(hl)
  inc a
  cp b
  jr nc, setNumDraw
- ld (numberSelection),a
+ ld (hl),a
  ;jr setNumDraw
  
 setNumDraw:
- call updateSetNum
+;update number in memory
+ ld hl,(setVarPTR)
+ ld a,(numberSelection)
+ ld (hl),a
  
  ld ix,(setNumberPTR)
  call drawObjectNoReset
@@ -1124,12 +1124,6 @@ setNumDraw:
  ld ix,(setNumberPTR)
  call drawObjectNoReset
  jr setNumberLoop
- 
-updateSetNum:
- ld hl,(setVarPTR)
- ld a,(numberSelection)
- ld (hl),a
- ret
  
 setNumberFinal: ;just wait for confirm/back to be released, then end
  ld ix, mbuttonBack
@@ -1283,7 +1277,7 @@ smcDrawMapTileA=$+1
 ;key registers read to here
 keys:
 .db 0,0,0,0
-.db 0,0,0,0
+.db 0,0,0
 
 defaultButtonData:
 PSS1024CopiedData:
@@ -1330,15 +1324,16 @@ checkKeyDown:
  ;so carry is set or not
  push af ;save carry state
  ld a,(ix+buttonTimer)
- cp 0
+ or a,a ;cp 0
  jr z, buttonOK
- cp (ix+buttonTimeStart)
+ ld b,(ix+buttonTimeStart)
+ cp b
  jr c, buttonNotOK ;less than start time
- sub (ix+buttonTimeStart) ;remove start time
+ sub b ;remove start time
  cp (ix+buttonTimeRepeat) ;compare to repeater time
  jr c, buttonNotOK ;less than repeat: don't repeat
  ;hit repeat timer: reset it, continue, key is good
- ld a,(ix+buttonTimeStart)
+ ld a,b
  ld (ix+buttonTimer),a
  
 buttonOK:
@@ -1357,20 +1352,20 @@ buttonNotOK:
  ret
 
 resetTimer:
- ld a,0
- ld (ix+buttonTimer),a
+ ld (ix+buttonTimer),0
  ret
 
 checkKeyHeld:
  ld a,(ix+buttonID)
 checkKeyA:
- ld de,0
- ld e,a
+ or a,a
+ sbc hl,hl
+ ld l,a
  and $07 ; a = bit
- srl e
- srl e
- srl e  ; e = byte
- ld hl, keys
+ srl l
+ srl l
+ srl l  ; l = byte
+ ld de, keys
  add hl,de ;add byte ofs 
  ld b,a
  ld a,(hl) 
@@ -1407,9 +1402,9 @@ waitButton:
 
 checkKey:
  call scanKeys
- ld a,-1
+ ld a,NO_KEY_PRESSED
  ld (smcLastPress),a ;if no press, default -1
- ld b,64
+ ld b,56
 rkeys:
  push bc
  ld a,b
@@ -1427,9 +1422,7 @@ smcLastPress = $+1
  ret
  
 ;source: http://wikiti.brandonw.net/index.php?title=84PCE:Ports:A000
-;I get how this works in theory
-;but it's still sketchy to me
-;so I copied it directly
+;copied from above source
 scanKeys:
  di             ; Disable OS interrupts
  ld hl,0F50000h
@@ -1442,42 +1435,35 @@ scan_wait:
 
  ;just take all of the keys
  ;probably can loop but eh
- ld a,(kbdG1)
- ld (keys),a
- ld a,(kbdG2)
- ld (keys+1),a
- ld a,(kbdG3)
- ld (keys+2),a
- ld a,(kbdG4)
- ld (keys+3),a
- ld a,(kbdG5)
- ld (keys+4),a
- ld a,(kbdG6)
- ld (keys+5),a
- ld a,(kbdG7)
- ld (keys+6),a
- ;ld a,(kbdG8) ;oh wait
- ;ld (keys+7),a
+ ld l,kbdG1 & $ff ; ld hl, kbdG1
+ ld de,keys
+ ld b,7
+ ld c,b
+scanKey:
+ ldi
+ inc hl
+;copy from hl to de
+;key dest is 8bit unit
+;key src is 16bit unit, so inc hl
+ djnz scanKey ;copy 7 keys
 
  ei             ; Enable OS interrupts
  ret
  
 ;source: http://wikiti.brandonw.net/index.php?title=84PCE:Ports:A000
-;this is similarily copied from the same source as above
-;but I really don't know what this does internally,
-;so I'm copying and not changing anything here.
-;might not be necessary, really
+;this is modified from the same source as above
+;might not be completely necessary, most of this doesn't get changed
 RestoreKeyboard:
- ld hl,0F50000h
+ ld hl,DI_Mode
  xor a		; Mode 0
+ ld b, 15
  ld (hl),a
  inc l		; 0F50001h
- ld (hl),15	; Wait 15*256 APB cycles before scanning each row
+ ld (hl),b	; Wait 15*256 APB cycles before scanning each row
  inc l		; 0F50002h
- xor a
  ld (hl),a
  inc l		; 0F50003h
- ld (hl),15	; Wait 15 APB cycles before each scan
+ ld (hl),b	; Wait 15 APB cycles before each scan
  inc l		; 0F50004h
  ld a,8		; Number of rows to scan
  ld (hl),a
