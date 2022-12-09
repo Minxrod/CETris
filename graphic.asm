@@ -689,6 +689,74 @@ textLoopEnd:
  ;ix points to 0 at end of string
  ;a is 0
  ret
+
+;in: hl
+;out: a,hl
+badDivHLby10:
+ push ix
+ push de
+;1677721 = 110011001100110011001b
+
+; hl->hlix
+ push hl
+ pop ix
+ or a,a
+ sbc hl,hl ;hl=0 ix=lower24
+ push ix ; will need later as "A"
+ push hl \ push ix
+ add ix,ix \ adc hl,hl
+ add ix,ix \ adc hl,hl
+ push hl \ push ix
+ pop de \ pop bc
+ add ix,ix \ adc hl,hl
+ add ix,de \ adc hl,bc
+ push hl \ push ix
+ pop de \ pop bc
+ ;1100 * hl -> ixhl, bcde  
+
+ ld a,4 
+repeatShift4Add12:
+ add ix,ix \ adc hl,hl
+ add ix,ix \ adc hl,hl
+ add ix,ix \ adc hl,hl
+ add ix,ix \ adc hl,hl
+ add ix,de \ adc hl,bc
+ dec a
+ jr nz, repeatShift4Add12
+ pop de \ pop bc
+ add ix,ix \ adc hl,hl
+ add ix,de \ adc hl,bc ;never carry because product < 2^32
+ ;hlix = 1677721*A
+ ex de,hl
+ pop hl
+ ;"B" de = 1677721*A//16777216
+ ;"A" hl = A
+againSub:
+ ld a,2
+againSubLoop:
+ sbc hl,de ;A-1B
+ sbc hl,de ;never carry because hl >= 10de
+ sbc hl,de
+ sbc hl,de ;A-4B
+ sbc hl,de ;A-5B
+ dec a ;never carry because catches z first
+ jr nz, againSubLoop
+ ; hl = A - 10B
+ ld a,l
+ cp 10
+ jr c, noAdjust
+ ; need to do A-10B-10
+ sub 10
+noAdjust:
+ ex de,hl
+ ;hl = B
+ ;a = A-10B or A-10B-10
+ ; in other words:
+ ;a = A % 10
+ ;hl = A // 10
+ pop de
+ pop ix
+ ret
  
 ;inputs: ix = data struct
 drawNumString:
@@ -714,8 +782,7 @@ drawNumShared:
  ld b,12
 convToString:
  push bc
- ld a,10
- call _DivHLByA
+ call badDivHLBy10
  add a,48
  ld (de),a
  dec de

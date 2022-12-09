@@ -1,6 +1,6 @@
-# echo "Creating and building tests file"
-#cat test.asm graphic.asm > test_full.asm
-# spasm -E -T test_full.asm bin/TEST.8xp
+echo "Creating and building tests file"
+cat test.asm graphic.asm > test_full.asm
+spasm -E -T test_full.asm bin/TEST.8xp
 echo Building tetrice_dat.asm
 # version information
 cat tetrice_dat.asm > cetrisdt.asm
