@@ -1598,7 +1598,7 @@ noBlockDown:
  ld (lockResets),a ;if block successfully moves down, you get resets back
  
 notLowestY:
- call setLockTimerIfGrounded
+ call notResetHasReset
  ret
 
 ;checks if the block CAN move down without actually moving it
