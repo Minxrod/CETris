@@ -21,7 +21,7 @@ blockGraphicSize 	equ	 2
 csLockedBit 	equ	 0    ;locked block bit
 csNewBlockBit 	equ	 1  ;prev. frame requests new block
 csClearLineBit 	equ	 2 ;if block cleared a line
-csGarbageBit 	equ	 3   ;apply garbage stored (unused)
+csGarbageBit 	equ	 3   ;apply garbage stored 
 csRotateTBit 	equ	 4   ;T-block last move was rotate
 csWallKicked 	equ	 5   ;if last rotate was kicked
 csUsedHold 	equ	 6     ;hold was used once already

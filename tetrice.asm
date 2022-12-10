@@ -180,18 +180,18 @@ noDelays:
 ; call queuedUpdate
  
 skipGameUpdate:
+ ld hl, (refTimer) ;time updates every frame
+ res redrawObjBit, (hl)
+ ld hl,(refScore)
+ res redrawObjBit, (hl)
+ 
  call drawGame
  
  ld hl,rules + rfWin
  bit rbitCountdown, (hl)
  call nz, timerDown ;timer decreases
  call z, timerUp ;timer increases
- 
- ld hl, (refTimer) ;time updates every frame
- res redrawObjBit, (hl)
- ld hl,(refScore)
- res redrawObjBit, (hl)
- 
+
  ld ix,rules
  bit rBitGameCont, (ix+rfBasic)
  jr nz, game ;jump if nz: bit is 1, game is going
@@ -642,13 +642,11 @@ dropReturn:
  call incGarbage
  
  ;check if lock
-
- ld a,(lockTimer)
- cp LOCK_DISABLE
+ ld hl,lockTimer
+ ld a,LOCK_DISABLE
+ cp (hl)
  jr z, skipLockCheck
- dec a
- ld (lockTimer),a
- cp 0
+ dec (hl)
  jr z, lock
 skipLockCheck:
  ret
@@ -666,7 +664,7 @@ hardDropLoop:
  inc hl
  inc hl
  ld (score),hl
- ld hl,0
+; ld hl,0
  ld ix,curData
  call checkBlockDown
  jr hardDropLoop
@@ -684,8 +682,8 @@ userDrop:
  ld (score),hl
  
 drop:
- ld hl,0
- ld (timerT),hl
+; ld hl,0
+; ld (timerT),hl
  ld ix,curData
  call checkBlockDown
  jp dropReturn
@@ -719,7 +717,11 @@ lockAllBlocks:
  ld hl, curStatus
  set csLockedBit,(hl) ;this is the lock frame.
  ;since it locks here, do not clear block when drawn.
- call checkLines ;only check line clears after a lock
+ call lockAnim
+ 
+ call checkLines 
+;only check line clears after a lock
+;note that checkLines runs cascadeAnim, so must happen after lockAnim
  
  ;call newBlock
  ld hl, curStatus
@@ -727,22 +729,36 @@ lockAllBlocks:
  ;delay spawn by some frames
  ld a,(spawnDelay)
  ld (spawnTimer),a
+ ret
 
- ld ix,(refField)
- set redrawObjBit, (ix+iDataType)
+lockAnim:
+; ld ix,(refField)
+; set redrawObjBit, (ix+iDataType)
 
+; ld ix,(drefIInfo)
+; call drawObjectsNoReset
+; call swapVRAMPtr
  ld ix,(drefIInfo)
- call drawObjects
-
+ call drawObjectsNoReset
+; call swapVRAMPtr
+  
  ld b,8
 lockAnimLoop:
  push bc
- ; probably erases a lot it doesn't need to
- ld de, midOfs + curData
- ld ix,(refField)
- ld h,1<<drawMinoErase
  push bc
- call eraseOldMino 
+ ; probably erases a lot it doesn't need to
+ ld ix, midOfs + curData
+ bit 0,b
+ jr nz, notOldOfs
+ ld ix, oldOfs + curData 
+notOldOfs:
+ bit csLockedBit,(ix+curStatusOfs)
+ jr nz, noEraseLocked
+ push ix
+ pop de
+ ld ix,(refField)
+ call NullPTRMino 
+noEraseLocked:
  call eraseGhostMino
  pop bc 
  
@@ -757,12 +773,15 @@ skipDark:
  call swapVRamPTR
  pop bc
  djnz lockAnimLoop
-
- ld hl,curStatus
- bit csClearLineBit,(hl)
- ret z ;no clear: do not set redraw field
- ld ix,(refField)
- res redrawObjBit, (ix+iDataType)
+ 
+; ld hl,curStatus
+; bit csGarbageBit,(hl)
+; jr nz, redrawField
+; bit csClearLineBit,(hl)
+; ret z ;no clear: do not set redraw field
+;redrawField:
+; ld ix,(refField)
+; res redrawObjBit, (ix+iDataType)
  ret
 
 gameEnd:
@@ -809,7 +828,7 @@ checkLines:
  bit csRotateTBit,(hl)
  call nz,checkTSpin
 
- ld a,0
+ xor a,a
  ld (linesClear),a
  call checkLineClears
 
@@ -1563,10 +1582,11 @@ checkBlockDown:
  call checkBlockDownOK
  pop ix
  or a,a
- ret z ;check block down failed: no decrement
+ jr z, noBlockDown ;check block down failed: no decrement
  inc (ix+curYOfs)
  res csRotateTBit,(ix+curStatusOfs)
 
+noBlockDown:
  ld hl,lowestY 
  ld b,(ix+curYOfs)
  ld a,(hl)
