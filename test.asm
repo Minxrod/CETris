@@ -126,66 +126,6 @@ waitForNoKey:
  jr nz,waitForNoKey
  jr test_loop_actual
 
-badDiv102:
- ;in: hl
- ;out: hl//10, a=hl%10
- push hl
- push hl
- pop de
- ;get low bit or something
- adc hl,hl
- adc hl,de
- adc hl,hl
- adc hl,hl ;12hl
- push hl
- pop de
- adc hl,hl
- adc hl,hl
- adc hl,hl
- adc hl,hl ;192
- adc hl,de ;204hl
- adc hl,hl
- adc hl,hl
- adc hl,hl
- adc hl,hl ;3264
- adc hl,de ;3276
- adc hl,hl ;6552
- adc hl,hl
- adc hl,hl
- adc hl,hl ;3264*16
- adc hl,de ;
- adc hl,hl ;
- adc hl,hl
- adc hl,hl
- adc hl,hl ;
- adc hl,de ;
- adc hl,hl ;
- pop de
- adc hl,de ;
- ;de = hl
- ;hl = 6553hl/65536
- ex de,hl
- or a,a
- sbc hl,de
- sbc hl,de
- sbc hl,de
- sbc hl,de
- sbc hl,de ;5
- sbc hl,de 
- sbc hl,de
- sbc hl,de
- sbc hl,de
- sbc hl,de ;10
- ld a,l
- cp 10
- ret c
- sub 10
- ;hl = A-10B
- ;de = A // 10
- ;a =  A  % 10
- ret
-
-
 testString:
  .db "0123456789 Test str Hello world!",0
 

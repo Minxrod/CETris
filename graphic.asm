@@ -695,12 +695,11 @@ textLoopEnd:
 badDivHLby10:
  push ix
  push de
-;1677721 = 110011001100110011001b
 
 ; hl->hlix
  push hl
  pop ix
- or a,a
+ xor a,a
  sbc hl,hl ;hl=0 ix=lower24
  push ix ; will need later as "A"
  push hl \ push ix
@@ -712,9 +711,18 @@ badDivHLby10:
  add ix,de \ adc hl,bc
  push hl \ push ix
  pop de \ pop bc
- ;1100 * hl -> ixhl, bcde  
-
- ld a,4 
+ ;1100 * hl -> ixhl, bcde 
+;TODO: use less precision for numbers that are smaller?
+;Makes end result need to be shifted out of hlix for smaller values...
+;constant binary constant         or n  precision loss past
+;25       11001	                  0     430
+;409      110011001               1     6830
+;6553     1100110011001	          2     109230
+;104857   11001100110011001       3     1747630
+;1677721  110011001100110011001   4     27962030 (i.e. never for 24bit numbers)
+;smcDivShiftSize=$+1
+ or 4
+; jr z, noShift4Add12
 repeatShift4Add12:
  add ix,ix \ adc hl,hl
  add ix,ix \ adc hl,hl
@@ -723,11 +731,17 @@ repeatShift4Add12:
  add ix,de \ adc hl,bc
  dec a
  jr nz, repeatShift4Add12
+noShift4Add12
  pop de \ pop bc
  add ix,ix \ adc hl,hl
- add ix,de \ adc hl,bc ;never carry because product < 2^32
+ add ix,de \ adc hl,bc ;never carry because product < 2^48
  ;hlix = 1677721*A
- ex de,hl
+;smcDivSmall=$
+; jr nc, noIxAdjust ;smc to jr c (never branch)
+; ld a,ixh ;if 25*A, ix < ~11000, so 25*A/256 -> ixh
+; ld l,a ;hl is 0 because small numbers only
+;noIxAdjust:
+ ex de,hl 
  pop hl
  ;"B" de = 1677721*A//16777216
  ;"A" hl = A
@@ -746,7 +760,8 @@ againSubLoop:
  cp 10
  jr c, noAdjust
  ; need to do A-10B-10
- sub 10
+ sub 10 ;nc because a>=10
+ inc de ;B=B+1
 noAdjust:
  ex de,hl
  ;hl = B
@@ -765,10 +780,13 @@ drawNumString:
 .db 0
 draw8BitNumber:
  ld hl,(ix+iDataPTR)
- ld a,(hl)
- or a,a
+ ld c,(hl)
+ xor a,a
  sbc hl,hl
- ld l,a ;hl = number
+ ld l,c ;hl = number
+; ld (smcDivShiftSize),a ;8bit numbers are within range for smallest precision
+; ld a,$38 ; jr c (for small numbers)
+ 
  ;jump to shared code
  jr drawNumShared
 
@@ -776,10 +794,14 @@ draw24BitNumber:
  ld hl,(ix+iDataPTR)
  
  ld hl,(hl) ;hl is number
+; ld a,4
+; ld (smcDivShiftSize),a
+; ld a,$30
  
 drawNumShared:
+; ld (smcDivSmall),a
  ld de,drawNumString+11
- ld b,12
+ ld b,(ix+iDataW) ;don't do extra divisions if we don't need more digits
 convToString:
  push bc
  call badDivHLBy10
