@@ -119,8 +119,17 @@ initGame:
  ld (linesToNextLevel),a
  ld (clearTimer),a
  ld (spawnTimer),a
-
- ld hl,0
+ 
+ ld a,(userLockDelay)
+ ld (lockDelay),a
+ ld a,(userSpawnDelay)
+ ld (spawnDelay),a
+ ld a,(userDASDelay)
+ ld (buttonLeft+buttonTimeStart),a
+ ld (buttonRight+buttonTimeStart),a
+  
+ or a,a
+ sbc hl,hl
  ld (score),hl ;don't keep old score/time!
  bit rbitCountdown, (ix+rfWin)
  jr nz, noResetTimer
@@ -517,9 +526,9 @@ hold:
  ld ix,rules
  bit rbitHoldEnabled,(ix+0)
  ret z ;hold is disabled
- ld hl, curStatus
- bit csLockedBit,(hl)
- ret nz ;don't hold on locking frame
+; ld hl, curStatus
+; bit csLockedBit,(hl)
+; ret nz ;don't hold on locking frame
 
  ld hl, curStatus
  bit csUsedHold,(hl)
@@ -719,6 +728,11 @@ lockAllBlocks:
  ld a,(spawnDelay)
  ld (spawnTimer),a
 
+ ld ix,(refField)
+ set redrawObjBit, (ix+iDataType)
+
+ ld ix,(drefIInfo)
+ call drawObjects
 
  ld b,8
 lockAnimLoop:
@@ -728,8 +742,9 @@ lockAnimLoop:
  ld ix,(refField)
  ld h,1<<drawMinoErase
  push bc
- call eraseOldMino
- pop bc
+ call eraseOldMino 
+ call eraseGhostMino
+ pop bc 
  
  ld ix,(refField)
  ld de, curData
@@ -742,13 +757,12 @@ skipDark:
  call swapVRamPTR
  pop bc
  djnz lockAnimLoop
- ret
 
-lockAnimStart:
+ ld hl,curStatus
+ bit csClearLineBit,(hl)
+ ret z ;no clear: do not set redraw field
  ld ix,(refField)
- ld de, curData
- ld h,1<<drawMinoDark
- call drawMinoObject ;likely not actually visible anyways
+ res redrawObjBit, (ix+iDataType)
  ret
 
 gameEnd:
@@ -920,21 +934,32 @@ untilFindLevelOrNone:
  dec hl
  jr untilFindLevelOrNone
 
-applyNewDelay:
- inc hl
+;in:
+;hl: ptr to new potential delay
+;de: ptr to current delay
+applyDelayIfNeeded:
+ ld a,(de)
+ cp (hl)
+ ret c ;don't apply if a < hl already (keep faster play if already set)
  ld a,(hl)
- ld (spawnDelay),a
- inc hl
- ld a,(hl)
- ld (lockDelay),a 
- inc hl
- ld a,(hl)
- ld (buttonLeft+buttonTimeStart),a
- ld (buttonRight+buttonTimeStart),a
- 
-noDelayDecrease:
+ ld (de),a
  ret
 
+applyNewDelay:
+ inc hl
+ ld de,spawnDelay
+ call applyDelayIfNeeded
+ 
+ inc hl
+ ld de,lockDelay 
+ call applyDelayIfNeeded
+ 
+ inc hl
+ ld de,buttonLeft+buttonTimeStart
+ call applyDelayIfNeeded
+ ld de,buttonRight+buttonTimeStart
+ call applyDelayIfNeeded
+ ret
  
 updateB2B:
  ld hl,lineClearInfo
@@ -1803,7 +1828,6 @@ smcDrawObjectsType=$+1
  call updateMino
  ld hl, curStatus
  bit csLockedBit, (hl)
-;call nz, lockAnimStart
 
  call swapVRamPTR
 
@@ -1985,22 +2009,29 @@ drawNewMino:
  call drawMinoObject ;likely not actually visible anyways
  ret
 
-drawGhostMino:
+eraseGhostMino:
  ld hl, rules + rfBasic
  bit rbitGhostEnabled, (hl)
  ret z ;ghost is disabled
  
  ld hl, curStatus + oldOfs ;can't use oldTempData due to missing changes
  bit csLockedBit, (hl)
- jr nz,skipEraseGhost ;only erase not locked blocks
+ ret nz ;,skipEraseGhost ;only erase not locked blocks
 ;bit csClearLineBit, (hl)
 ;jr nz,skipEraseGhost ;don't erase a mino that cleared lines
-
+ 
  ld ix, (refField)
  ld de, oldTempData
  call nullPTRMino 
-skipEraseGhost: 
+skipEraseGhost:
+ or 1 ;reset z
+ ret
+ 
 
+drawGhostMino:
+ call eraseGhostMino
+ ret z ;ghost disabled
+ 
  ld ix, tempData
 
 lowerGhost:
@@ -2326,8 +2357,12 @@ createSave:
  ld hl, defaultButtonData
  ld bc, defaultButtonDataSize
  ldir ;copy button data to save data
- ;default appvar name after buttons
- ;(not necessary now/maybe ever?)
+ 
+ ex de,hl
+ ;hl points to after button data
+ ld de,$0F1E1E  ; default DAS,ARE,Lock
+ ld (hl),de
+ 
  pop de
  ret
 
@@ -2339,9 +2374,12 @@ loadSave:
  ld de, buttonData 
  ld bc, defaultButtonDataSize
  ldir ;copy from ave
+
+ ld hl,(ix+savLockStart) ;3 bytes
+ ld (userLockDelay),hl
  
- lea hl, ix+savThemeSub
- ld a,(hl)
+;lea hl, ix+savThemeSub
+ ld a,(ix+savThemeSub)
  ld (theme),a
  ret 
  
@@ -2353,9 +2391,11 @@ saveSave:
  ld bc, defaultButtonDataSize
  ldir ;copy from ave
  
- lea hl, ix+savThemeSub
+ ld hl,(userLockDelay) ; 3 bytes
+ ld (ix+savLockStart),hl
+ 
  ld a,(theme)
- ld (hl),a
+ ld (ix+savThemeSub),a
  
  ld hl, CETrisSavVar
  call _Mov9ToOP1
@@ -2414,9 +2454,6 @@ initData:
  ld de,menuJumpTable
  ld bc,menuJumpsEnd - menuJumps
  ldir
- 
- ld a,30
- ld (lockDelay),a
  ret
  
 ;program data
@@ -2509,12 +2546,12 @@ kicksI:
  .db  0, 0, -1, 0,  2, 0, -1, 0,  2, 0 ;same
 
 ; finally, a REAL rotation 
-kicksO:
- .db  0, 0
- .db  0, 1
- .db -1, 1
- .db -1, 0
- .db  0, 0
+;kicksO:
+; .db  0, 0
+; .db  0, 1
+; .db -1, 1
+; .db -1, 0
+; .db  0, 0
 
 ;this is needed to give important jumps 
 ;fixed addresses to call from the data file, 

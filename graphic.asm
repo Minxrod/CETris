@@ -1055,6 +1055,10 @@ menuUp:
  or a,a ;cp 0
  jr z, menuDraw ;don't go past zero
  dec (hl)
+ call getStringPTRSelection
+ ld a,(hl)
+ or a,a
+ jr z,menuUp
  jr menuDraw
  
 menuDown:
@@ -1065,6 +1069,10 @@ menuDown:
  cp (ix+iDataW) ;# items
  jr nc, menuDraw ;don't go past end of list
  ld (hl),a
+ call getStringPTRSelection
+ ld a,(hl)
+ or a,a
+ jr z, menuDown ;skip empty lines
  jr menuDraw
 
 amenuEnd:
@@ -1072,7 +1080,7 @@ amenuEnd:
  ld a,-1 
  ld (menuSelection),a
  
-menuSelect: 
+menuSelect:
  ld de,0
  ld a,(menuSelection)
  inc a
@@ -1112,9 +1120,6 @@ scanMenuText:
 ptrOK:
  ;pointer is found to string
  ;hl = pointer
- ;or a,a
- ;ld de,SSS
- ;sbc hl,de ;hl=ofs from SSS
  ret
  
 numberMax:
@@ -1369,7 +1374,6 @@ keys:
 .db 0,0,0
 
 defaultButtonData:
-PSS1024CopiedData:
 ;buttonleft:
 .db 49, 7, 2, 0
 ;buttonright:
@@ -1403,7 +1407,6 @@ PSS1024CopiedData:
 ;buttonquit:
 .db 7, noRepeat, noRepeat, 0
 defaultButtonDataEnd:
-PSS1024CopiedDataEnd:
 defaultButtonDataSize = defaultButtonDataEnd - defaultButtonData
 
 ;ix = ptr to key data to check

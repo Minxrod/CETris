@@ -307,7 +307,7 @@ gotoOptions:
  jp jptActiveMenu
  
 startMenuData:
- .db 6
+ .db 5
   ;background
  .db typeBox
  .dw 0 ;x
@@ -321,7 +321,7 @@ startMenuData:
  .db 8
  .db textColor
  .dl startMenuText
- .db 4, 2 ;# items, cursorID within menuObjData
+ .db 3, 2 ;# items, cursorID within menuObjData
  ;cursor
  .db typeString
  .dw 0
@@ -343,24 +343,15 @@ startMenuSelectLev:
  .db textColor
  .dl level
  .db 2, 2 ;digits, bgcolor
-startMenuSelectLD:
- .db typeNumber
- .dw 96
- .db 24
- .db textColor
- .dl lockDelay
- .db 2, 2 ;digits, bgcolor
  
 startMenuText:
  .db "Mode:",0
  .db "Level:",0
- .db "Lock Delay:",0
  .db "BEGIN",0
 startMenuJumps:
  jp jptMainMenu ;example of prev menu jump
  jp selectMode
  jp selectLev
- jp selectLockDelay
  jp jptInitGame ;starts game
  
 selectLev:
@@ -373,16 +364,6 @@ selectLev:
  ld ix, startMenuData
  jp jptActiveMenu
  
-selectLockDelay:
- ld ix, startMenuSelectLD
- ld a, 61
- call jptSetNumber
- 
- ;after setting number,
- ;return to main start menu.
- ld ix, startMenuData
- jp jptActiveMenu
-
 selectMode:
  ld ix, selectModeMenu
  jp jptActiveMenu
@@ -485,43 +466,44 @@ setMarathon:
  jr setLines
  
 setRetro:
- ld e,1
+ ld e,1*modeSize
  call setModeFromE
  jr setLines
 
 setLineRace:
- ld e,2
+ ld e,2*modeSize
  call setModeFromE
  jr setLines
  
 setDig:
- ld e,3
+ ld e,3*modeSize
  call setModeFromE
  jr setGeneration
 
 setExcavate: 
- ld e,3
+ ld e,3*modeSize
  call setModeFromE
  jr setGenGGD
 
 setRising:
- ld e,4
+ ld e,4*modeSize
  call setModeFromE
  jr setRisingInfo
  
 setCascade:
- ld e,5
+ ld e,5*modeSize
  call setModeFromE
  jr setLines
  
 setUltra:
- ld e,6
+ ld e,6*modeSize
  call setModeFromE
  ld l,a  ;minutes
- ld h,60 ;60 sec
+ ld h,30 ;30*2 sec
  mlt hl  ;min * 60 sec
  ld h,60 ;approx. frame/sec
  mlt hl  ;min * 60sec/min * 60frame/sec 
+ add hl,hl ;this is the *2
  ld (globalTimer),hl
  jr slToMenu
 
@@ -579,17 +561,15 @@ modeData:
  .db rMarathon, rRising, rNull, rLine ;dig challenge
  .db rMarathon, rCascadeExtra, rLines, rScore ;cascade
  .db rMarathon, rNull, rCountdown, rScore ;ultra
+modeSize=4
 
 setModeFromE:
- ld b,e
- ld de,0
- push de
- ld e,b ;ensure de in 1 byte
- ld hl, modeData
+ or a,a
+ sbc hl,hl
+ push hl
+ ld l,e
+ ld de,modeData
  add hl,de
- add hl,de
- add hl,de
- add hl,de ;4x mode in e
  ld de,rules
  pop bc ;bc=0
  ld c,4
@@ -713,113 +693,87 @@ replaceBlockSpriteID:
  djnz replaceBlockSpriteID
  ;all spriteid has been replaced, back to option
  ret
- 
+
+ctrlMenuTextY=8
+ctrlColumnX1=8
+ctrlColumnX2=128
 controlMenuData:
- .db 5
+ .db 10
 ;background
  .db typeBox
  .dw 0
  .db 0
  .db 22
- .dl 132
- .db 23, 40
+ .dl 172
+ .db 23, 208
 ;menu
  .db typeMenu
- .dw 8
- .db 8
+ .dw ctrlColumnX1
+ .db ctrlMenuTextY
  .db textColor
  .dl controlMenuText
- .db 3, 2
+ .db 22, 2
 ;cursor
  .db typeString
  .dw 0
- .db 8
+ .db ctrlMenuTextY
  .db textColor
  .dl cursorString 
  .db 0, 0
+keyRepeatStart:
+ .db typeNumber8
+ .dw ctrlColumnX2
+ .db ctrlMenuTextY
+ .db textColor
+ .dl userDASDelay
+ .db 2, 22 ;digits, bgcolor
 keyRepeatLR:
  .db typeNumber8
- .dw 104
- .db 8
+ .dw ctrlColumnX2
+ .db ctrlMenuTextY + 8
  .db textColor
  .dl buttonLeft + buttonTimeRepeat
- .db 3, 22 ;digits, bgcolor
+ .db 2, 22 ;digits, bgcolor
 keyRepeatDrop:
  .db typeNumber8
- .dw 104
- .db 16
+ .dw ctrlColumnX2
+ .db ctrlMenuTextY + 16
  .db textColor
  .dl buttonSoft + buttonTimeRepeat
- .db 3, 22 ;digits, bgcolor
- 
-controlMenuText:
- .db "MOVE REPEAT:",0
- .db "DROP REPEAT:",0
- .db "SET CONTROLS",0
-controlJumps:
- jp gotoOptions
- jp setButtonInfoLR
- jp setButtonInfoDrop
- jp buttonMappingMenu
- 
-setButtonInfoLR:
- ld ix, keyRepeatLR
- ld a,255
- call jptSetNumber
- 
- ;affect both LEFT and RIGHT.
- ld a,(numberSelection)
- ld hl,buttonRight+buttonTimeRepeat
- ld (hl),a
- 
- jp controlMenu
- 
-setButtonInfoDrop:
- ld ix, keyRepeatDrop
- ld a,255
- call jptSetNumber
-
- jp controlMenu
- 
-buttonMappingMenu:
- ld ix, buttonMappingData
- jp jptActiveMenu
- 
-buttonMappingData:
- .db 4
-;bg box
- .db typeBox
- .dw 0
- .db 0
- .db 25
- .dl 180
- .db 26, 96
-;menu text
- .db typeMenu
- .dw 8
- .db 8
+ .db 2, 22 ;digits, bgcolor
+lockDelayNum:
+ .db typeNumber8
+ .dw ctrlColumnX2
+ .db ctrlMenuTextY + 24
  .db textColor
- .dl remapMenuText
- .db 8, 2
-;cursor
- .db typeString
- .dw 0
- .db 8
+ .dl userLockDelay
+ .db 2, 22 ;digits, bgcolor
+spawnDelayNum:
+ .db typeNumber8
+ .dw ctrlColumnX2
+ .db ctrlMenuTextY + 32
  .db textColor
- .dl cursorString 
- .db 0, 0
+ .dl userSpawnDelay
+ .db 2, 22 ;digits, bgcolor
 ;button info
  .db typeCustom
- .dw 0
- .db 0
+ .dw ctrlColumnX2
+ .db 56
  .db 0
  .dl listButtonMaps
- .db 0, 8
+ .db 8, 8
+;menu button info
+ .db typeCustom
+ .dw ctrlColumnX2
+ .db 128
+ .db 0
+ .dl listMenuButtonMaps
+ .db 7, 8
 
 buttonPrompt:
  .db typeString
  .dw 8
- .db 80
+ .db 192
  .db textColor
  .dl buttonPromptText 
  .db 0, 0
@@ -834,7 +788,14 @@ tempText:
  .dl 0
  .db 0, 0
  
-remapMenuText:
+controlMenuText:
+ .db "DAS START",0
+ .db "DAS REPEAT",0
+ .db "DROP REPEAT",0
+ .db "LOCK DELAY",0
+ .db "SPAWN DELAY",0
+ .db 0
+;remapMenuText:
  .db "LEFT MOVE",0
  .db "RIGHT MOVE",0
  .db "SOFT DROP",0
@@ -843,8 +804,22 @@ remapMenuText:
  .db "RIGHT ROTATE",0
  .db "HOLD",0
  .db "PAUSE",0
-remapMenuJumps:
- jp controlMenu
+ .db 0
+ .db "MENU UP",0
+ .db "MENU DOWN",0
+ .db "MENU LEFT",0
+ .db "MENU RIGHT",0
+ .db "MENU CONFIRM",0
+ .db "MENU BACK",0
+ .db "EXIT",0
+controlJumps:
+ jp gotoOptions
+ jp setDASDelay
+ jp setButtonInfoLR
+ jp setButtonInfoDrop
+ jp setLockDelay
+ jp setSpawnDelay
+ .dw 0,0
  ld a,0
  jr mapButton
  ld a,4
@@ -860,6 +835,21 @@ remapMenuJumps:
  ld a,24
  jr mapButton
  ld a,28
+ jr mapButton
+ .dw 0,0
+ ld a,32
+ jr mapButton
+ ld a,36
+ jr mapButton
+ ld a,40
+ jr mapButton
+ ld a,44
+ jr mapButton
+ ld a,48
+ jr mapButton
+ ld a,52
+ jr mapButton
+ ld a,56
  jr mapButton
 
 mapButton:
@@ -887,35 +877,83 @@ waitAnyKey:
  pop hl
  ld (hl),a
  
- jp buttonMappingMenu
+ jp controlMenu
  
+setDASDelay:
+ ld ix, keyRepeatStart
+ ld a,31
+ call jptSetNumber
+ jp controlMenu
+
+setLockDelay:
+ ld ix, lockDelayNum
+ ld a, 61
+ call jptSetNumber
+ jp controlMenu
+
+setSpawnDelay:
+ ld ix, spawnDelayNum
+ ld a,31
+ call jptSetNumber
+ jp controlMenu
+
+setButtonInfoLR:
+ ld ix, keyRepeatLR
+
+ ld a,100
+ push ix
+ call jptSetNumber
+ pop ix 
+ 
+ ;affect both LEFT and RIGHT.
+ ld a,(numberSelection)
+ ld hl,(ix+iDataPTR)
+ inc hl
+ inc hl
+ inc hl
+ inc hl
+ ld (hl),a
+ 
+ jp controlMenu
+ 
+setButtonInfoDrop:
+ ld ix, keyRepeatDrop
+ ld a,100
+ call jptSetNumber
+
+ jp controlMenu
+
 ;this draws all of the current button mappings.
 ;ix: points to temptext
+listMenuButtonMaps:
+ ld hl,menuButtonData
+ jr listButtonShared 
 listButtonMaps:
- ld b,8
  ld hl,buttonData
- ld ix,tempText
+listButtonShared:
+ ld de,(ix+iDataX)
+ ld b,(ix+iDataW)
+ ld (tempText+iDataX),de ;overwrites Y as well, but Y is re-written in loop so it's fine
 listButtonLoop:
  push bc
  push hl
- ld a,(hl) ;current buttonID
- ld c,a
- ld a,8
+ ld a,(ix+iDataW)
  sub b ;8-b = y location
  add a,a
  add a,a
- add a,a
- add a,8
+ add a,a ;*char size [8]
+ add a,(ix+iDataY) ;add y offset
+ ld (tempText+iDataY),a
  
- ld (ix+iDataY),a
- ld a,c ;restore buttonID
+ ld a,(hl) ;current buttonId
  
  ld hl,buttonText
  call jptGetStringInList
- ld (ix+iDataPTRL),hl
+ ld (tempText+iDataPTRL),hl
 
- res redrawObjBit, (ix+iDataType)
  push ix
+ ld ix,tempText
+ res redrawObjBit, (ix+iDataType)
  call jptDrawObject
  pop ix
  pop hl
@@ -979,57 +1017,57 @@ gameOverText:
  
 buttonText:
 ;g1
- .db "GRAPH",0
- .db "TRACE",0
- .db "ZOOM",0
- .db "WINDOW",0
- .db "Y=",0
+ .db "F5",0
+ .db "F4",0
+ .db "F3",0
+ .db "F2",0
+ .db "F1",0
  .db "2ND",0
  .db "MODE",0
  .db "DEL",0
 ;g2
  .db "ON",0 ;unobtainable
- .db "STO",0
- .db "LN",0
- .db "LOG",0
- .db "X^2",0
- .db "X^-1",0
- .db "MATH",0
+ .db "X",0
+ .db "S",0
+ .db "N",0
+ .db "I",0
+ .db "D",0
+ .db "A",0
  .db "ALPHA",0
 ;g3
- .db "0",0
- .db "1",0
- .db "4",0
- .db "7",0
- .db ",",0
- .db "SIN",0
- .db "APPS",0
+ .db "SPACE",0
+ .db "Y",0
+ .db "R",0
+ .db "O",0
+ .db "J",0
+ .db "E",0
+ .db "B",0
  .db "XT0N",0
 ;g4
- .db ".",0
- .db "2",0
- .db "5",0
- .db "8",0
- .db "(",0
- .db "COS",0
- .db "PRGM",0
+ .db ":",0
+ .db "Z",0
+ .db "U",0
+ .db "P",0
+ .db "K",0
+ .db "F",0
+ .db "C",0
  .db "STAT",0
 ;g5
- .db "(-)",0
- .db "3",0
- .db "6",0
- .db "9",0
- .db ")",0
- .db "TAN",0
+ .db "?",0
+ .db "THETA",0
+ .db "V",0
+ .db "Q",0
+ .db "L",0
+ .db "G",0
  .db "VARS",0
  .db "NA",0
 ;g6
  .db "ENTER",0
- .db "+",0
- .db "-",0
- .db "*",0
- .db "/",0
- .db "^",0
+ .db "\"",0
+ .db "W",0
+ .db "R",0
+ .db "M",0
+ .db "H",0
  .db "CLEAR",0
  .db "NA",0
 ;g7
@@ -1107,6 +1145,7 @@ spriteData:
 .db $3f,$ff,$fc
 .db $0f,$ff,$f0
 
+;quads
 .db $ff, $ff, $ff
 .db $ea, $be, $ab
 .db $ea, $be, $ab
@@ -1119,6 +1158,8 @@ spriteData:
 .db $ea, $be, $ab
 .db $ea, $be, $ab
 .db $ff, $ff, $ff
+
+;shine
 .db $ff, $ff, $ff
 .db $e9, $56, $6b
 .db $e5, $59, $ab
@@ -1131,6 +1172,8 @@ spriteData:
 .db $ea, $aa, $ab
 .db $ea, $aa, $ab
 .db $ff, $ff, $ff
+
+;glow
 .db $ff, $ff, $ff
 .db $ff, $ff, $ff
 .db $fa, $aa, $af
@@ -1143,6 +1186,8 @@ spriteData:
 .db $fa, $aa, $af
 .db $ff, $ff, $ff
 .db $ff, $ff, $ff
+
+;bubble
 .db $0a, $aa, $a0
 .db $29, $56, $a8
 .db $a5, $56, $aa
@@ -1155,6 +1200,8 @@ spriteData:
 .db $aa, $aa, $ae
 .db $2a, $aa, $f8
 .db $0a, $aa, $a0
+
+;window
 .db $ff, $ff, $ff
 .db $ea, $aa, $ab
 .db $e5, $56, $ab
@@ -1167,6 +1214,8 @@ spriteData:
 .db $ea, $aa, $ab
 .db $ea, $aa, $ab
 .db $ff, $ff, $ff
+
+;crate
 .db $ff, $ff, $ff
 .db $fa, $aa, $af
 .db $ee, $aa, $bb
@@ -1179,6 +1228,8 @@ spriteData:
 .db $ee, $aa, $bb
 .db $fa, $aa, $af
 .db $ff, $ff, $ff
+
+;light
 .db $2a, $aa, $a8
 .db $95, $55, $56
 .db $95, $55, $56
@@ -1192,6 +1243,7 @@ spriteData:
 .db $95, $55, $56
 .db $2a, $aa, $a8
 
+;puyo
 .db $00, $aa, $00
 .db $0a, $aa, $a0
 .db $2a, $aa, $a8

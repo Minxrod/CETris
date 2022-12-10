@@ -104,8 +104,11 @@ qaRotateLeft	equ	 1
 qaRotateRight	equ	 2
 lockResets	equ	 gameVars + 64 ; move reset related
 lowestY		equ	 gameVars + 68 ; lowest Y level reached for this block
+userLockDelay	equ	 gameVars + 72 ; user-defined starting lock delay
+userSpawnDelay	equ	 gameVars + 73 ; user starting spawn delay
+userDASDelay	equ	 gameVars + 74 ; user DAS start
 
-miscVars	equ	 gameVars + 72
+miscVars	equ	 gameVars + 100
 
 ;not the best location
 ;but I don't really know where to put this stuff
@@ -237,6 +240,7 @@ buttonRotateRight 	equ	 5 * buttonDataSize + buttonData
 buttonHold 	equ	 6 * buttonDataSize + buttonData
 buttonPause 	equ	 7 * buttonDataSize + buttonData
 
+menuButtonData	equ	 8 * buttonDataSize + buttonData
 mbuttonUp 	equ	 8 * buttonDataSize + buttonData
 mbuttonDown 	equ	 9 * buttonDataSize + buttonData
 mbuttonLeft 	equ	 10 * buttonDataSize + buttonData
@@ -254,7 +258,10 @@ dataLocation 	equ	 saveSScreen
 
 ;save file consts
 savKeys 	equ	 0
-savTheme 	equ	 64 ;appvar name for theme
+savMisc		equ	 60 ;base for various small pieces of info
+savLockStart	equ	 savMisc + 0
+savSpawnStart	equ	 savMisc + 1
+savDASStart	equ	 savMisc + 2
 savThemeSub 	equ	 73 ;block theme id, etc.
 savHighscore 	equ	 74
 savHighSize 	equ	 8
@@ -272,6 +279,7 @@ redrawObjBit 	equ	 7
 
 ;variou	equates for itemsInfo
 iDataType 		equ	 0 ;type of data (use type~ to check)
+iDataX			equ	 1 ;x (16 bit)
 iDataXL			equ	 1 ;x low byte
 iDataXH			equ	 2 ;x high byte
 iDataY			equ	 3 ;y
