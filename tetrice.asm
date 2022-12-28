@@ -2242,7 +2242,7 @@ notErase:
  jr z,notDark
  ld a,(minoBlockObj+iDataA) ;TODO: make flexible? use bc?
 ;Alternate TODO: set darkBit, (ix+iDataA) ;?
- add a,32
+ add a,shadowOfs
  ld (minoBlockObj+iDataA),a
 notDark:
  ld b,4 ;number of blocks (TODO make flexible)
@@ -2382,6 +2382,12 @@ createSave:
  ;hl points to after button data
  ld de,$0F1E1E  ; default DAS,ARE,Lock
  ld (hl),de
+; would be needed if save data was not already zero'd
+; ld de,$000000  ; default back,color,block 
+; inc hl
+; inc hl
+; inc hl
+; ld (hl),de 
  
  pop de
  ret
@@ -2399,8 +2405,8 @@ loadSave:
  ld (userLockDelay),hl
  
 ;lea hl, ix+savThemeSub
- ld a,(ix+savThemeSub)
- ld (theme),a
+ ld hl,(ix+savThemeBlock) ;3 bytes
+ ld (themeBlock),hl
  ret 
  
 ;assumes loaded and already in RAM
@@ -2414,8 +2420,8 @@ saveSave:
  ld hl,(userLockDelay) ; 3 bytes
  ld (ix+savLockStart),hl
  
- ld a,(theme)
- ld (ix+savThemeSub),a
+ ld hl,(themeBlock) ;3 bytes
+ ld (ix+savThemeBlock),hl
  
  ld hl, CETrisSavVar
  call _Mov9ToOP1

@@ -7,7 +7,7 @@
 dataReferences:
 .dl spriteData ;std sprites like blocks, field, etc
 .dl fontData ;font data. 
-.dl blockGraphicData ;block sprite+palette pairs
+.dl 0 ;previously block sprite+palette pairs
 .dl 0 ;what will this be?
 .dl paletteData ;palette data
 .dl menuObjData ;menu data
@@ -538,12 +538,11 @@ setGenGGD:
  ld e,a
  and $1f
  ld (ix+rGGA),a ;rows
- xor a
- ld b,3
-eback3:
- rl e
- rla
- djnz eback3
+ ld a,e
+ rlca
+ rlca
+ rlca 
+ and $07
  inc a ;generate 1-8 density, not 0-7 because 0 is pointless anyways
  ld (ix+rGGD),a
  jr slToMenu
@@ -599,7 +598,7 @@ optionsMenuData:
  .db 16
  .db textColor
  .dl optionsMenuText
- .db 2, 3
+ .db 3, 3
 ;curosr
  .db typeString
  .dw 0
@@ -614,15 +613,23 @@ themeSelection:
  .db 0
  .db 0
  .dl themeSelectionCompound
- .db 3, 0
+ .db 4, 0
 
 ;this allows for live preview using the compound as the selectNumber redraw object
 themeSelectionCompound:
- .db typeNumber
+blockSelectNum:
+ .db typeNumber8
  .dw 56
  .db 16
  .db textColor
- .dl theme
+ .dl themeBlock
+ .db 3, 18
+colorSelectNum:
+ .db typeNumber8
+ .dw 56
+ .db 24
+ .db textColor
+ .dl themeColor
  .db 3, 18
 previewBGBox:
  .db typeBox
@@ -658,21 +665,30 @@ dPMLoop:
  ret
 
 optionsMenuText:
- .db "THEME:",0
+ .db "BLOCK:",0
+ .db "COLOR:",0
  .db "CONTROLS",0
 optionJumps:
  jp jptMainMenu
  jp setTheme
+ jp setColor
  jp controlMenu
  
+themeColorText:
+.db "LIGHT",0
+.db "DARK",0
+.db "GRAY",0
+.db "DARK GRAY",0
+
 controlMenu:
  ld ix,controlMenuData
  jp jptActiveMenu
  
 setTheme:
- ld ix,themeSelection
  ld a,12
- ld hl,theme
+ ld hl,themeBlock
+sharedTheme:
+ ld ix,themeSelection
  call jptSetNumber
  
  call applyTheme
@@ -680,14 +696,37 @@ setTheme:
  ld ix, optionsMenuData
  jp jptActiveMenu ;back to options menu
  
+setColor:
+ ld a,4
+ ld hl,themeColor
+ jr sharedTheme
+
 applyTheme:
- ld a,(theme) ;value just set here
- ld hl,(drefBlocks)
+ ld hl,themeBlock
+ ld e,(hl) ;block
+ inc hl
+ ld a,(hl) ;color flags
+;check dark
+ srl a
+ ld hl,$e77fff
+ jr nc,noSetDark
+ ld hl,$e72108 ;first 3 bytes of palette
+noSetDark:
+ ld ($e30200),hl
+;check mono
+ srl a
+ ld hl,blockGraphicData
+ jr nc,noSetMono
+ ld hl,monoGraphicData
+noSetMono:
+ ld (holdBackground+iExtTileset),hl
+ ld (fieldInfo+iExtTileset),hl
+ 
  inc hl
  inc hl ;skip the null block
  ld b,7
 replaceBlockSpriteID:
- ld (hl),a
+ ld (hl),e
  inc hl ;palette
  inc hl ;next block spriteid
  djnz replaceBlockSpriteID
@@ -1077,15 +1116,27 @@ buttonText:
  .db "UP",0
 
 blockGraphicData:
- .db  0, 0
- .db  0, 4
- .db  0, 8
- .db  0, 12
- .db  0, 16
- .db  0, 20
- .db  0, 24
- .db  0, 28
- .db  0, 29
+ .db  0, 0 ;null
+ .db  0, 4 ;I
+ .db  0, 8 ;L
+ .db  0, 12 ;J
+ .db  0, 16 ;O
+ .db  0, 20 ;S
+ .db  0, 24 ;T
+ .db  0, 28 ;Z
+ .db  0, 29 ;garbage
+blockGraphicDataSize=$-blockGraphicData
+
+monoGraphicData:
+ .db  0, 0 ;null
+ .db  0, 32 ;I
+ .db  0, 32 ;L
+ .db  0, 32 ;J
+ .db  0, 32 ;O
+ .db  0, 32 ;S
+ .db  0, 32 ;T
+ .db  0, 32 ;Z
+ .db  0, 1 ;garbage
 
 spriteData:
 .db sp2bpp
@@ -1386,12 +1437,11 @@ numbers:
 .db $00, $10, $20, $7e, $20, $10, $00, $00
 fontDataEnd:
 
-
 paletteData:
 ; If you swap which of the two below lines is commented, you get a "dark mode" of sorts
 ; (background color becomes black; grid is slightly lighter)
-.dw $7fff, $1CE7, $3def, $0000
-;.db $00, $00, $ef, $3d, $18, $63, $ff, $7f
+.dw $7fff, $1CE7, $3def, $0000	;null block
+;.db $ff, $7f, $ef, $3d, $18, $63, $ff, $7f
 .db $ff, $7f, $3f, $33, $9d, $02, $b3, $01
 .db $ff, $7f, $9e, $25, $39, $1d, $53, $00
 .db $ff, $7f, $8d, $7e, $e4, $7d, $40, $69
@@ -1399,7 +1449,9 @@ paletteData:
 .db $ff, $7f, $8c, $17, $08, $0b, $45, $02
 .db $ff, $7f, $fb, $6d, $34, $51, $10, $40
 .db $ff, $7f, $8d, $7d, $64, $74, $00, $60
-.db $00, $00, $08, $21, $8c, $31, $31, $46
+.db $00, $00, $18, $63, $ef, $3d, $08, $21 ;monochrome
+
+.db $00, $00, $08, $21, $8c, $31, $31, $46 ;darker null block (unused)
 .db $31, $46, $b1, $19, $50, $01, $ca, $00
 .db $31, $46, $d0, $10, $8d, $0c, $0a, $00
 .db $31, $46, $46, $45, $e1, $44, $a0, $38
@@ -1407,6 +1459,7 @@ paletteData:
 .db $31, $46, $e6, $09, $a4, $01, $22, $01
 .db $31, $46, $ee, $38, $8a, $28, $08, $20
 .db $31, $46, $c6, $44, $21, $40, $00, $30
+.db $00, $00, $ef, $3d, $08, $21, $00, $00 ;dark mono
 ;.dw $00ff, $0ff0, $ff00, $f00f
 ;.dw $7fff, $1CE7, $3def, $0000
 ;.dw $7fff, $4f7d, $029d, $1d39

@@ -7,6 +7,8 @@ NO_KEY_PRESSED	equ	 -1
 vRamSplitSize 	equ	 (vRamEnd - vRam) / 2 
 vRamSplit 	equ	 vRam + vRamSplitSize
 
+shadowOfs	equ	 36
+
 ;variables and memory regions
 PSS 	equ	 plotSScreen
 field 	equ	 PSS
@@ -200,7 +202,9 @@ rRetro 	equ	 rGame
 rCascadeExtra 	equ	 rCascade | rCascadeAnim
 
 lockDelay 	equ	 PSS + 760
-theme 	equ	 PSS + 764 ;precedes blockData
+themeBlock 	equ	 PSS + 764 ;precedes blockData
+themeColor	equ	 PSS + 765
+themeBack	equ	 PSS + 766
 spawnDelay	equ	 PSS + 768
 clearDelay	equ	 PSS + 772
 blockData 	equ	 PSS + 776
@@ -262,7 +266,10 @@ savMisc		equ	 60 ;base for various small pieces of info
 savLockStart	equ	 savMisc + 0
 savSpawnStart	equ	 savMisc + 1
 savDASStart	equ	 savMisc + 2
-savThemeSub 	equ	 73 ;block theme id, etc.
+savThemeBlock	equ	 savMisc + 4
+savThemeColor	equ	 savMisc + 5
+savThemeBack	equ	 savMisc + 6
+savUnknown 	equ	 savMisc + 7
 savHighscore 	equ	 74
 savHighSize 	equ	 8
 savSize 	equ	 512 ;save should not pass this size, kinda large.
