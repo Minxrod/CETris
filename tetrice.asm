@@ -54,7 +54,7 @@ main:
  ld (preserveSP),sp
  ld hl, PSS
  ld de, PSS + 1
- ld bc, 512
+ ld bc, 4096
  ld (hl),0
  ldir
  
@@ -2440,31 +2440,31 @@ createSave:
 loadSave:
  ld ix,(saveDataPTR) ;ix is ptr to save data
  lea hl, ix+savKeys ;get hl as savedata+keys
- ld de, buttonData 
- ld bc, defaultButtonDataSize
- ldir ;copy from ave
+ ld de, saveData
+ ld bc, savFixedSize
+ ldir ;copy from save
 
- ld hl,(ix+savLockStart) ;3 bytes
- ld (userLockDelay),hl
+; ld hl,(ix+savLockStart) ;3 bytes
+; ld (userLockDelay),hl
  
 ;lea hl, ix+savThemeSub
- ld hl,(ix+savThemeBlock) ;3 bytes
- ld (themeBlock),hl
+; ld hl,(ix+savThemeBlock) ;3 bytes
+; ld (themeBlock),hl
  ret 
  
 ;assumes loaded and already in RAM
 saveSave:
  ld ix,(saveDataPTR) ;ix is ptr to save data
- ld hl, buttonData
+ ld hl, saveData
  lea de, ix+savKeys ;get hl as savedata+keys
- ld bc, defaultButtonDataSize
+ ld bc, savFixedSize
  ldir ;copy from ave
  
- ld hl,(userLockDelay) ; 3 bytes
- ld (ix+savLockStart),hl
+; ld hl,(userLockDelay) ; 3 bytes
+; ld (ix+savLockStart),hl
  
- ld hl,(themeBlock) ;3 bytes
- ld (ix+savThemeBlock),hl
+; ld hl,(themeBlock) ;3 bytes
+; ld (ix+savThemeBlock),hl
  
  ld hl, CETrisSavVar
  call _Mov9ToOP1

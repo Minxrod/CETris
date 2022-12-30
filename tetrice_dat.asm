@@ -35,6 +35,7 @@ references:
 .dl previewInfo
 .dl timerInfo
 
+
 ;note: address expected in tetrice.inc to be refSize * 16 + SSS. be sure to modify if refs are added.
 initDat:
  call applyTheme
@@ -46,8 +47,55 @@ textColor= 3
 infoBoxX = 168
 infoBoxY = 16
 
+uiCompound:
+;backgroundInfo:
+.db typeMap
+.dw 0
+.db 0
+.db 16
+.dl 1
+.db 20, 15 ;size of entire screen
+;backgroundInfoExtended:
+.db typeExtended
+.dl bgSprite
+.dl bgTiles
+.dl empty300
+;bg box for logo
+.db typeBox
+.dw 248
+.db 192
+.db 2
+.dl 72
+.db 3, 38
+;logo
+.db typeSprite1bpp
+.dw 256
+.db 200
+.db 1
+.dl logoSprite 
+.db 7, 14
+;version string
+.db typeString
+.dw -versionStringSize * 8 + 320
+.db 216
+.db textColor
+.dl versionString
+.db 0, 0
+
+;uiCompoundObj
+;.db typeCompound
+;.dw 0, 0
+;.dl uiCompound
+;.db 4, 0
+
+;Game items info
 itemsInfo:
-.db 11 ;number of items
+.db 12 ;number of items
+;uiCompoundObj
+.db typeCompound
+.dw 0, 0
+.dl uiCompound
+.db 4, 0
 fieldInfo:
 .db typeMap
 .dw 0 ;x
@@ -136,7 +184,7 @@ holdBGExtended:
 .db typeExtended
 .dl spriteData
 .dl blockGraphicData
-.dl empty16
+.dl empty300
 holdMino:
 .db typeCustom
 .dw 144 ;x
@@ -239,7 +287,12 @@ gameText:
 SSSInfo = itemsInfo
 
 menuObjData:
- .db 5
+ .db 4
+;uiCompoundObj
+ .db typeCompound
+ .dw 0, 0
+ .dl uiCompound
+ .db 5, 0
  ;background
  .db typeBox
  .dw 0 ;x
@@ -253,27 +306,13 @@ menuObjData:
  .db 8
  .db textColor
  .dl menuText
- .db 3, 2 ;# items, cursorID within menuObjData
+ .db 3, 3 ;# items, cursorID within menuObjData
  ;cursor
  .db typeString
  .dw 0
  .db 8
  .db textColor
  .dl cursorString
- .db 0, 0
- ;logo
- .db typeSprite1bpp
- .dw 256
- .db 200
- .db 1
- .dl logoSprite 
- .db 7, 14
-;version string
- .db typeString
- .dw -versionStringSize * 8 + 320
- .db 216
- .db textColor
- .dl versionString
  .db 0, 0
 
 cursorString:
@@ -598,7 +637,7 @@ optionsMenuData:
  .db 16
  .db textColor
  .dl optionsMenuText
- .db 3, 3
+ .db 5, 3
 ;curosr
  .db typeString
  .dw 0
@@ -613,7 +652,7 @@ themeSelection:
  .db 0
  .db 0
  .dl themeSelectionCompound
- .db 4, 0
+ .db 7, 0
 
 ;this allows for live preview using the compound as the selectNumber redraw object
 themeSelectionCompound:
@@ -631,54 +670,84 @@ colorSelectNum:
  .db textColor
  .dl themeColor
  .db 3, 18
-previewBGBox:
- .db typeBox
- .dw 96
- .db 18
- .db 2
- .dl 64
- .db 3, 176
-;preview
-previewThemeMino:
+bgSelectNum:
+ .db typeNumber8
+ .dw 56
+ .db 32
+ .db textColor
+ .dl themeBack
+ .db 3, 18
+bgColSelectNum:
+ .db typeNumber8
+ .dw 56
+ .db 40
+ .db textColor
+ .dl themeBGColor
+ .db 3, 18
+setThemeLive:
  .db typeCustom
- .dw 116
- .db 80  ;will be overrode by drawPreviewMino
- .db demoTOfs
- .dl drawPreviewMinos
- .db 0, 0
+ .dw 0,0
+ .dl applyTheme
+ .db 0,0 
+previewMapInfo:
+ .db typeMap
+ .dw 100 ;x
+ .db 144 ;y
+ .db 12 ;a/size of tile
+ .dl 1 ;flags
+ .db fieldDrawWidth, 8 ;10, 20 default
+;fieldExtended
+ .db typeExtended ;part of previous object
+ .dl spriteData
+ .dl blockGraphicData ;tileset pointer here
+ .dl previewMap
+
+;previewBGBox:
+; .db typeBox
+; .dw 96
+; .db 18
+; .db 2
+; .dl 64
+; .db 3, 176
+;preview
+;previewThemeMino:
+; .db typeCustom
+; .dw 116
+; .db 80  ;will be overrode by drawPreviewMino
+; .db demoTOfs
+; .dl drawPreviewMinos
+; .db 0, 0
  
-drawPreviewMinos:
- call applyTheme
- ld b,7
-dPMLoop:
- push bc
- ld a,b
- ld (demoT),a
- ld c,24
- mlt bc
- ld a,c
- ld (previewThemeMino+iDataY),a
+;drawPreviewMinos:
+; call applyTheme
+; ld b,7
+;dPMLoop:
+; push bc
+; ld a,b
+; ld (demoT),a
+; ld c,24
+; mlt bc
+; ld a,c
+; ld (previewThemeMino+iDataY),a
 ;at the time of writing ix is preserved by dMFTW
- call drawMinoFromTypeWrapper
- pop bc
- djnz dPMLoop
- ret
+; call drawMinoFromTypeWrapper
+; pop bc
+; djnz dPMLoop
+; ret
 
 optionsMenuText:
  .db "BLOCK:",0
  .db "COLOR:",0
+ .db "BACKG:",0
+ .db "BGCOL:",0
  .db "CONTROLS",0
 optionJumps:
  jp jptMainMenu
  jp setTheme
  jp setColor
+ jp setBack
+ jp setBackColor
  jp controlMenu
- 
-themeColorText:
-.db "LIGHT",0
-.db "DARK",0
-.db "GRAY",0
-.db "DARK GRAY",0
 
 controlMenu:
  ld ix,controlMenuData
@@ -701,26 +770,45 @@ setColor:
  ld hl,themeColor
  jr sharedTheme
 
+setBack:
+ ld a,4
+ ld hl,themeBack
+ jr sharedTheme
+
+setBackColor:
+ ld a,64
+ ld hl,themeBGColor
+ jr sharedTheme
+
 applyTheme:
  ld hl,themeBlock
  ld e,(hl) ;block
  inc hl
- ld a,(hl) ;color flags
+ ld b,(hl) ;color flags
+ inc hl
+ ld d,(hl) ;background tile
+ inc hl
+ ld a,(hl) ;bg color
+ ld hl,bgTiles
+ ld (hl),d
+ inc hl
+ ld (hl),a
 ;check dark
- srl a
+ srl b
  ld hl,$e77fff
  jr nc,noSetDark
  ld hl,$e72108 ;first 3 bytes of palette
 noSetDark:
  ld ($e30200),hl
 ;check mono
- srl a
+ srl b
  ld hl,blockGraphicData
  jr nc,noSetMono
  ld hl,monoGraphicData
 noSetMono:
  ld (holdBackground+iExtTileset),hl
  ld (fieldInfo+iExtTileset),hl
+ ld (previewMapInfo+iExtTileset),hl
  
  inc hl
  inc hl ;skip the null block
@@ -1138,6 +1226,17 @@ monoGraphicData:
  .db  0, 32 ;Z
  .db  0, 1 ;garbage
 
+previewMap:
+;10*8
+.db 0,0,0,0,0,0,1,0,0,0
+.db 0,0,0,0,0,0,1,0,0,0
+.db 0,0,0,7,0,0,1,0,0,0
+.db 2,0,7,7,5,0,1,0,4,4
+.db 2,0,7,6,5,5,0,3,4,4
+.db 2,2,6,6,6,5,0,3,3,3
+.db 8,8,8,8,8,8,0,8,8,8
+.db 8,8,8,8,8,8,0,8,8,8
+
 spriteData:
 .db sp2bpp
 ;default
@@ -1308,6 +1407,31 @@ spriteData:
 .db $0a, $aa, $a0
 .db $00, $aa, $00
 
+bgTiles:
+.db $00, $01
+
+bgSprite:
+.db sp1bpp
+;diags
+.db $33, $33, $66, $66, $cc, $cc, $99, $99
+.db $33, $33, $66, $66, $cc, $cc, $99, $99
+.db $33, $33, $66, $66, $cc, $cc, $99, $99
+.db $33, $33, $66, $66, $cc, $cc, $99, $99
+;block
+.db $40, $02, $a0, $05, $50, $0b, $3f, $f7
+.db $10, $0f, $10, $0f, $10, $0f, $10, $0f
+.db $10, $0f, $10, $0f, $10, $0f, $10, $0f
+.db $2f, $f7, $5f, $fb, $bf, $fd, $7f, $fe
+;star
+.db $01, $80, $01, $80, $01, $80, $02, $40
+.db $02, $40, $04, $20, $19, $98, $e2, $47
+.db $e2, $47, $19, $98, $04, $20, $02, $40
+.db $02, $40, $01, $80, $01, $80, $01, $80
+;????
+.db $08, $08, $08, $08, $08, $08, $10, $14
+.db $10, $14, $28, $22, $46, $41, $81, $80
+.db $80, $40, $00, $b1, $01, $0a, $02, $04
+.db $02, $04, $04, $04, $1c, $0a, $e4, $09
 
 logoSprite:
 ;.db sp1bpp
@@ -1331,8 +1455,6 @@ logoSprite:
 ;sequence of 16 bytes of zeroes
 ;used to draw hold map background
 ;note: sp1bpp = 0
-empty16:
-.db 0,0,0,0,0,0,0
 
 fontData:
 ;bits per pixel

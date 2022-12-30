@@ -106,9 +106,9 @@ qaRotateLeft	equ	 1
 qaRotateRight	equ	 2
 lockResets	equ	 gameVars + 64 ; move reset related
 lowestY		equ	 gameVars + 68 ; lowest Y level reached for this block
-userLockDelay	equ	 gameVars + 72 ; user-defined starting lock delay
-userSpawnDelay	equ	 gameVars + 73 ; user starting spawn delay
-userDASDelay	equ	 gameVars + 74 ; user DAS start
+;userLockDelay	equ	 gameVars + 72 ; user-defined starting lock delay
+;userSpawnDelay	equ	 gameVars + 73 ; user starting spawn delay
+;userDASDelay	equ	 gameVars + 74 ; user DAS start
 
 miscVars	equ	 gameVars + 100
 
@@ -202,14 +202,17 @@ rRetro 	equ	 rGame
 rCascadeExtra 	equ	 rCascade | rCascadeAnim
 
 lockDelay 	equ	 PSS + 760
-themeBlock 	equ	 PSS + 764 ;precedes blockData
-themeColor	equ	 PSS + 765
-themeBack	equ	 PSS + 766
+;themeBlock 	equ	 PSS + 764 ;precedes blockData
+;themeColor	equ	 PSS + 765
+;themeBack	equ	 PSS + 766
 spawnDelay	equ	 PSS + 768
 clearDelay	equ	 PSS + 772
 blockData 	equ	 PSS + 776
 buttonData 	equ	 PSS + 1024
+saveData	equ	 PSS + 1024
 blockGraphic 	equ	 PSS + 1280
+empty300	equ	 PSS + 1536
+;next must be past 1836
 
 menuJumpTable 	equ	 PSS + 2048
 jptMainMenu 	equ	 menuJumpTable + 0
@@ -269,11 +272,21 @@ savDASStart	equ	 savMisc + 2
 savThemeBlock	equ	 savMisc + 4
 savThemeColor	equ	 savMisc + 5
 savThemeBack	equ	 savMisc + 6
-savUnknown 	equ	 savMisc + 7
+savThemeBGCol	equ	 savMisc + 7
+savUnknown 	equ	 savMisc + 8 ;to 13
+savFixedSize	equ	 74  ; size of button +  misc
 savHighscore 	equ	 74
 savHighSize 	equ	 8
 savSize 	equ	 512 ;save should not pass this size, kinda large.
 savScoreSize 	equ	 savSize - savHighScore ;
+
+userLockDelay	equ	 saveData + savLockStart ; user-defined starting lock delay
+userSpawnDelay	equ	 saveData + savSpawnStart ; user starting spawn delay
+userDASDelay	equ	 saveData + savDASStart ; user DAS start
+themeBlock	equ	 saveData + savThemeBlock
+themeColor	equ	 saveData + savThemeColor
+themeBack	equ	 saveData + savThemeBack
+themeBGColor	equ	 saveData + savThemeBGCol
 
 ;drawing stuff
 drawMinoErase 	equ	 0
