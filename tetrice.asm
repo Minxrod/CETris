@@ -1513,42 +1513,33 @@ smcNoRotateRXY=$+1
  ;call setLockTimerIfGrounded 
  ret
  
-rotationTempHL:
- .db 0,0,0 ;3 bytes for HL
-rotationTempBC:
- .db 0,0,0 ;3 bytes for BC
-rX:
- .db 0
-rY:
- .db 0
-rAttempt:
- .db 0
-
 ;multiplys curR by 10 and stores to de
 getTableOffset:
  ld a,(curR)
- ld de,0
- ld hl,0
+ ld e,a 
+ add a,a
+ add a,a
+ add a,e
+ add a,a ;this is fine because curR in [0,4] -> [0,40] will never carry
+;has nc
+ sbc hl,hl
+ ex de,hl
  ld e,a
- ld l,a
- add hl,hl
- add hl,hl
- add hl,de
- add hl,hl ;10*rotation -> hl is offset in table at saved (hl)
- push hl
- pop de
  ret 
  
-;requires HL to be table ptr
+;HL=table ptr
+;de=+10 or -10 (direction)
 ;updates HL by two
 calculateRXY:
+ ld bc,rX
  ld a, (curX)
  add a,(hl) ;add x offset
  add hl,de
  sub (hl) ;subtract next offset
  or a
  sbc hl,de ;undo the addition to next offset (back to start)
- ld (rX), a ;save to special location
+ ld (bc), a ;save to special location
+ inc bc ;points to rY
  inc hl ;now on Y value
  ld a, (curY)
  add a,(hl) ;add y offset
@@ -1556,7 +1547,7 @@ calculateRXY:
  sub (hl)
  or a
  sbc hl,de ;undo again
- ld (rY), a
+ ld (bc), a
  inc hl ;hl is 2 past previous offset ->
  ret
 
@@ -1570,7 +1561,7 @@ checkMoveRight:
  ld d,1
 
 checkMove:
- ld a,(curX)
+; ld a,(curX)
  ld hl, curBlock
  ld b,4
 checkBlocksToSide:
@@ -1603,9 +1594,10 @@ checkBlocksToSide:
  djnz checkBlocksToSide
  
  ;here: no blocks too far...
- ld a,(curX)
+ ld hl,curX
+ ld a,(hl)
  add a,d
- ld (curX),a
+ ld (hl),a
  
  ld hl,curStatus ;last move wasn't rotate
  res csRotateTBit,(hl)
@@ -1739,31 +1731,30 @@ nonzeroDelay:
 ;TODO: variable field width?
 checkBlock:
  ld a,l ;y
- ld d,a ;y
  add a,a ;x2
  add a,a ;x4
- add a,d ;4y + 1y
+ add a,l ;4y + 1y
  add a,a ;10y
- ld de,0 ;aaa
- ld e,h
- ld hl,0 ;;;aaaa
- ld l,a 
- add hl,de ;10Y +x
+ add a,h ;10y + x (note: only works because field size < 256)
+ or a,a
+ sbc hl,hl
+ ld l,a
  ld de,field
- add hl,de
+ add hl,de ;10Y + x + field
  ld a,(hl) ;a = block at (10Y+X)
  ret
  
 ;inputs:
 ;a = block type
 copyBlockData:
- ld hl, blockData
  dec a
  add a,a ;x2
  add a,a ;x4
  add a,a ;x8
- ld de,0
- ld e,a ;de = offset from blockData
+;has nc for a<16 (always true)
+ sbc hl,hl
+ ld l,a
+ ld de,blockData
  add hl,de
  ;hl = pointer to blockdata
  ld de, curBlock
@@ -1782,11 +1773,13 @@ getNextBagItem:
  ld de,randbag
  ld bc,13
  ldir ;slide all previous items up in queue
- ld hl,randbag2 + 6
+ dec hl 
+;ld hl,randbag2 + 6
  ld (hl),RANDOM_NULL
- ld a,(randbag2)
- cp RANDOM_NULL ;check that randbag2 is not empty
  ld hl,randBag2
+ ld a,(hl)
+ or a,a
+; cp RANDOM_NULL ;check that randbag2 is not empty
  call z,randFillBag ;if the bag is empty, fill it.
  pop af
  ret
@@ -1796,16 +1789,13 @@ initBag:
  
  ld hl, randbag
  call randFillBag
- ld hl, randbag2
+;randFillBag ends up pointing to randBag2 at the end anyways
+; ld hl, randbag2
  call randFillBag
  ret
 
 ;input:
 ;hl= ptr to bag to fill 
-randBagPtr:
- .db 0,0,0 ;save ptr to bag here
-randCountFail:
- .db 0
 randFillBag: 
  ld b,7
  ld (randBagPtr),hl
@@ -1816,8 +1806,9 @@ randTryAgain:
  call rand
  ld a,e
  and $07
- cp RANDOM_NULL
- jr z, randTryAgain ; seven is not an OK random number
+; cp RANDOM_NULL
+;above not needed because RANDOM_NULL=0
+ jr z, randTryAgain 
  ld b, 7
  ld hl, (randBagPtr)
 randCheckLoop:
@@ -1831,20 +1822,16 @@ randCheckLoop:
  pop bc
  djnz randFillLoop
  ret
-
-randseed:
- .db 0,0,0
-randinput:
- .db 0
  
 ;initialize random stuff
 randInit:
  ;init randseed
+ ld hl,randSeed
  ld a,r
- ld (randseed),a
- ld a,r
+ ld (hl),a
+ inc hl
  add a,42
- ld (randseed+1),a
+ ld (hl),a
  
  ;init bags with RANDOM_NULL
  ld hl, randbag
@@ -1853,7 +1840,6 @@ randInit:
  ld (hl), RANDOM_NULL
  ldir
  ret
- 
 
 ;generates a random 16-bit nubmer
 ;galosis LFSR, based on wikipedia page
@@ -1889,8 +1875,8 @@ drawGame:
 smcDrawObjectsType=$+1
  call drawObjects ; NoReset
  call updateMino
- ld hl, curStatus
- bit csLockedBit, (hl)
+; ld hl, curStatus
+; bit csLockedBit, (hl)
 
  call swapVRamPTR
 

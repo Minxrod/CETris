@@ -106,9 +106,16 @@ qaRotateLeft	equ	 1
 qaRotateRight	equ	 2
 lockResets	equ	 gameVars + 64 ; move reset related
 lowestY		equ	 gameVars + 68 ; lowest Y level reached for this block
-;userLockDelay	equ	 gameVars + 72 ; user-defined starting lock delay
-;userSpawnDelay	equ	 gameVars + 73 ; user starting spawn delay
-;userDASDelay	equ	 gameVars + 74 ; user DAS start
+rotationTemp	equ	 gameVars + 71 ; 9 bytes
+rotationTempHL	equ	 rotationTemp + 0
+rotationTempBC	equ	 rotationTemp + 3
+rX	equ	 rotationTemp + 6
+rY	equ	 rotationTemp + 7
+rAttempt	equ	 rotationTemp + 8
+randSeed	equ	 gameVars + 80 ; random seed
+randInput	equ	 gameVars + 83 
+randBagPtr	equ	 gameVars + 84
+randCountFail	equ	 gameVars + 87
 
 miscVars	equ	 gameVars + 100
 
