@@ -10,7 +10,12 @@ spasm -E -L cetrisdt.asm
 tools/convbin -j 8x -k 8xv -i bin/CETRISDT.8xp -o bin/CETrisDT.8xv -n CETrisDT
 echo Creating and building CETRIS
 cat tetrice.asm graphic.asm > cetris.asm
-spasm -E -T cetris.asm bin/CETRIS.8xp
+if [ $2 ]; then
+	spasm -E -T -DMETA=$1 cetris.asm bin/CETRIS.8xp
+else
+	spasm -E -T cetris.asm bin/CETRIS.8xp
+fi
+
 spasm -E -L cetris.asm
 spasm -E -T cetris.asm #generates .lst file
 
