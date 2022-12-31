@@ -61,22 +61,23 @@ uiCompound:
 .dl bgTiles
 .dl empty300
 ;bg box for logo
+titleCompound:
 .db typeBox
-.dw 248
+.dw 240
 .db 192
 .db 2
 .dl 72
 .db 3, 38
 ;logo
 .db typeSprite1bpp
-.dw 256
+.dw 248
 .db 200
 .db 1
 .dl logoSprite 
 .db 7, 14
 ;version string
 .db typeString
-.dw -versionStringSize * 8 + 320
+.dw -versionStringSize * 8 + 312
 .db 216
 .db textColor
 .dl versionString
@@ -121,7 +122,7 @@ previewInfo:
 .db 0 ;unused
 .db 0 ;unused
 .dl previewCompound 
-.db 7, 0 ; number of items, unused
+.db 8, 0 ; number of items, unused
 ;BACKGROUND BOX INFO
 .db typeBox
 .dw infoBoxX ;x
@@ -173,73 +174,85 @@ highscoreInfo:
 .db 8, boxcolor
 
 holdCompound:
-holdBackground:
-.db typeMap
-.dw 132 ;x
-.db 160 ;y
-.db 12 ;tile size (pixels)
-.dl 0 ;no flags needed
-.db 4, 4 ;width, height (tiles)
-holdBGExtended:
-.db typeExtended
-.dl spriteData
-.dl blockGraphicData
-.dl empty300
+holdBox:
+ .db typeBox
+ .dw 126
+ .db 160
+ .db 2
+ .dl 36
+ .db 3, 36
+holdTitle:
+ .db typeString
+ .dw 128
+ .db 162
+ .db textColor
+ .dl holdText
+ .db 0, 0
 holdMino:
-.db typeCustom
-.dw 144 ;x
-.db 184 ;y
-.db holdTOfs ;minoTypes offset
-.dl drawMinoFromTypeWrapper
-.db 1<<csUsedHold, 0 ;mask against csStatus, setting (partially overrode in draw function)
+ .db typeCustom
+ .dw 138 ;x
+ .db 184 ;y
+ .db holdTOfs ;minoTypes offset
+ .dl drawMinoFromTypeWrapper
+ .db 1<<csUsedHold, 1<<drawMinoHalf ;mask against csStatus, setting (partially overrode in draw function)
+
+previewY=6
+previewMinoSize=21 ;Y size
 
 previewCompound:
 previewBox:
  .db typeBox
  .dw 126 ;x
- .db 6 ;y
+ .db previewY ;y
  .db 2 ;color
  .dl 36 ;width
  .db 3, 144 ;border, height
+previewTitle:
+ .db typeString
+ .dw 128
+ .db previewY + 2
+ .db textColor
+ .dl nextText
+ .db 0, 0
 previewMino1:
  .db typeCustom
  .dw 138 ;x
- .db 18 ;y
+ .db 1 * previewMinoSize + previewY ;y
  .db bag1Ofs + 0 ;first preview index
  .dl drawMinoFromTypeWrapper
  .db 0, 1<<drawMinoHalf
 previewMino2:
  .db typeCustom
  .dw 138 ;x
- .db 44 ;y
+ .db 2 * previewMinoSize + previewY  ;y
  .db bag1Ofs + 1 ;second preview piece, etc.
  .dl drawMinoFromTypeWrapper
  .db 0, 1<<drawMinoHalf
 previewMino3:
  .db typeCustom
  .dw 138 ;x
- .db 68 ;y
+ .db 3 * previewMinoSize + previewY  ;y
  .db bag1Ofs + 2
  .dl drawMinoFromTypeWrapper
  .db 0, 1<<drawMinoHalf
 previewMino4:
  .db typeCustom
  .dw 138 ;x
- .db 90 ;y
+ .db 4 * previewMinoSize + previewY  ;y
  .db bag1Ofs + 3
  .dl drawMinoFromTypeWrapper
  .db 0, 1<<drawMinoHalf
 previewMino5:
  .db typeCustom
  .dw 138 ;x
- .db 116 ;y
+ .db 5 * previewMinoSize + previewY  ;y
  .db bag1Ofs + 4
  .dl drawMinoFromTypeWrapper
  .db 0, 1<<drawMinoHalf
 previewMino6:
  .db typeCustom
  .dw 138 ;x
- .db 138 ;y
+ .db 6 * previewMinoSize + previewY  ;y
  .db bag1Ofs + 5
  .dl drawMinoFromTypeWrapper
  .db 0, 1<<drawMinoHalf
@@ -248,20 +261,23 @@ previewMino6:
 drawMinoFromTypeWrapper:
  or a,a
  sbc hl,hl
- ld a,(curStatus)
+ ex de,hl
+ sbc hl,hl
  push hl
- push hl
- push hl
- pop bc
+ pop bc ;hl=de=bc=0
  ld c,(ix+iDataA)
  ld hl,minoTypes
- add hl,bc
- ld c,(hl)
- pop de ;0
- pop hl ;0
+ add hl,bc ; ptr to mino type
+ ld c,(hl) ; mino type
+ ld a,c
+ or a,a
+ ret z
+;nc only
+ sbc hl,hl
  ld e,(ix+iDataXL)
  ld d,(ix+iDataXH)
  ld h,(ix+iDataH)
+ ld a,(curStatus)
  and (ix+iDataW)
  jr z, holdReady
  set drawMinoDark, h
@@ -282,17 +298,21 @@ gameText:
  .db "Lines:",0
  .db 0
  .db " Best:",0
- 
+
+nextText:
+ .db "NEXT",0
+holdText:
+ .db "HOLD",0
 
 SSSInfo = itemsInfo
 
 menuObjData:
  .db 4
-;uiCompoundObj
+;titleCompound
  .db typeCompound
  .dw 0, 0
- .dl uiCompound
- .db 5, 0
+ .dl titleCompound
+ .db 3, 0
  ;background
  .db typeBox
  .dw 0 ;x
@@ -623,7 +643,7 @@ optionsMenuData:
  .db 0 ;y
  .db 18 ;color
  .dl 80 ;width
- .db 19, 40 ;bordercolor, height
+ .db 19, 64 ;bordercolor, height
 ;heading
  .db typeString
  .dw 0
@@ -652,7 +672,7 @@ themeSelection:
  .db 0
  .db 0
  .dl themeSelectionCompound
- .db 7, 0
+ .db 9, 0
 
 ;this allows for live preview using the compound as the selectNumber redraw object
 themeSelectionCompound:
@@ -689,6 +709,18 @@ setThemeLive:
  .dw 0,0
  .dl applyTheme
  .db 0,0 
+previewBGInfo:
+ .db typeMap
+ .dw 84
+ .db 128
+ .db 16
+ .dl 1
+ .db 10, 7 ;size of entire screen
+;backgroundInfoExtended:
+ .db typeExtended
+ .dl bgSprite
+ .dl bgTiles
+ .dl empty300
 previewMapInfo:
  .db typeMap
  .dw 100 ;x
@@ -701,39 +733,6 @@ previewMapInfo:
  .dl spriteData
  .dl blockGraphicData ;tileset pointer here
  .dl previewMap
-
-;previewBGBox:
-; .db typeBox
-; .dw 96
-; .db 18
-; .db 2
-; .dl 64
-; .db 3, 176
-;preview
-;previewThemeMino:
-; .db typeCustom
-; .dw 116
-; .db 80  ;will be overrode by drawPreviewMino
-; .db demoTOfs
-; .dl drawPreviewMinos
-; .db 0, 0
- 
-;drawPreviewMinos:
-; call applyTheme
-; ld b,7
-;dPMLoop:
-; push bc
-; ld a,b
-; ld (demoT),a
-; ld c,24
-; mlt bc
-; ld a,c
-; ld (previewThemeMino+iDataY),a
-;at the time of writing ix is preserved by dMFTW
-; call drawMinoFromTypeWrapper
-; pop bc
-; djnz dPMLoop
-; ret
 
 optionsMenuText:
  .db "BLOCK:",0
@@ -771,7 +770,7 @@ setColor:
  jr sharedTheme
 
 setBack:
- ld a,4
+ ld a,5
  ld hl,themeBack
  jr sharedTheme
 
@@ -806,7 +805,7 @@ noSetDark:
  jr nc,noSetMono
  ld hl,monoGraphicData
 noSetMono:
- ld (holdBackground+iExtTileset),hl
+; ld (holdBackground+iExtTileset),hl
  ld (fieldInfo+iExtTileset),hl
  ld (previewMapInfo+iExtTileset),hl
  
@@ -1230,10 +1229,10 @@ previewMap:
 ;10*8
 .db 0,0,0,0,0,0,1,0,0,0
 .db 0,0,0,0,0,0,1,0,0,0
-.db 0,0,0,7,0,0,1,0,0,0
-.db 2,0,7,7,5,0,1,0,4,4
-.db 2,0,7,6,5,5,0,3,4,4
-.db 2,2,6,6,6,5,0,3,3,3
+.db 0,0,0,7,0,0,1,0,2,0
+.db 0,0,7,7,5,0,1,0,2,0
+.db 4,4,7,6,5,5,0,3,2,2
+.db 4,4,6,6,6,5,0,3,3,3
 .db 8,8,8,8,8,8,0,8,8,8
 .db 8,8,8,8,8,8,0,8,8,8
 
@@ -1407,11 +1406,18 @@ spriteData:
 .db $0a, $aa, $a0
 .db $00, $aa, $00
 
+drawWithTransTiles:
+.db $00, $00
 bgTiles:
 .db $00, $01
 
 bgSprite:
 .db sp1bpp
+;solid
+.db $ff, $ff, $ff, $ff, $ff, $ff, $ff, $ff
+.db $ff, $ff, $ff, $ff, $ff, $ff, $ff, $ff
+.db $ff, $ff, $ff, $ff, $ff, $ff, $ff, $ff
+.db $ff, $ff, $ff, $ff, $ff, $ff, $ff, $ff
 ;diags
 .db $33, $33, $66, $66, $cc, $cc, $99, $99
 .db $33, $33, $66, $66, $cc, $cc, $99, $99
@@ -1456,6 +1462,7 @@ logoSprite:
 ;used to draw hold map background
 ;note: sp1bpp = 0
 
+;8*96 -> 768 bytes
 fontData:
 ;bits per pixel
 .db sp1bpp
@@ -1525,6 +1532,7 @@ numbers:
 .db $00, $38, $18, $18, $18, $18, $38, $00
 .db $00, $18, $18, $3c, $3c, $66, $66, $00
 .db $00, $00, $00, $00, $00, $00, $7e, $00
+; `abcdefghijklmnopqrstuvwxyz{|}~
 .db $00, $30, $18, $0c, $00, $00, $00, $00
 .db $00, $00, $3c, $06, $3e, $66, $3e, $00
 .db $00, $60, $60, $7c, $66, $66, $7c, $00

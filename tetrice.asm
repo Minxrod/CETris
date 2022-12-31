@@ -1915,18 +1915,12 @@ updateMino:
  ld bc, curDataSize
  ldir
 
- ld hl, curStatus
- bit csClearLineBit, (hl)
- ret nz
- ld hl, curStatus + midOfs
- bit csClearLineBit, (hl)
+ ld a, (curStatus)
+ and $0c ; csClearLineBit | csGarbageBit
  ret nz
  
- ld hl, curStatus
- bit csGarbageBit, (hl)
- ret nz
- ld hl, curStatus + midOfs
- bit csGarbageBit, (hl)
+ ld a, (curStatus + midOfs)
+ and $0c
  ret nz
  
  call eraseOldMino
