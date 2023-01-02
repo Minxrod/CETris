@@ -11,9 +11,12 @@ It's Tetris, for the TI-84 Plus CE. Created entirely in ez80 assembly.
 * Very customizable data format (better documentation pending)
 
 # Future plans
-* Remaining scoring mechanics (Combo, All-Clear detection)
-* Dig challenge speed-up with time
-* Better documentation of data file and code
+Priority is listed in brackets.
+* [HIGH] Remaining scoring mechanics (Combo, All-Clear detection)
+* [MED] Ability to view all high scores at once
+* [MED] Display mode in score box of game
+* [LOW] Dig challenge speed-up with time
+* [LOW] Better documentation of data file and code
 
 # Controls
 These can be changed from within the Options/Controls menu.
@@ -33,8 +36,7 @@ These can be changed from within the Options/Controls menu.
 * Mode - pause
 
 # Known Issues
-* Some specific action with unknown timing seems to cause the last move
-left or right to be undone?
+* Pausing on a frame around when the next piece spawns can cause the preview to get stuck between two frames for the duration of the pause
 
 # Building 
 You will need convbin and spasm-ng (see Tools section) placed in the tools/ directory. If you are on Windows and want to build, try using MinGW, the build script only works on Linux or similar.

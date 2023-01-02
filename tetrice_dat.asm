@@ -41,8 +41,10 @@ initDat:
  call applyTheme
  ret
 
-boxColor = 14
-boxColor2= 15
+boxColor = 2
+boxColor2= 3
+lightBoxColor = 14
+lightBoxColor2 = 15
 textColor= 3
 infoBoxX = 168
 infoBoxY = 16
@@ -65,14 +67,21 @@ titleCompound:
 .db typeBox
 .dw 240
 .db 192
-.db 2
+.db lightBoxColor
 .dl 72
-.db 3, 40
-;logo
+.db lightBoxColor2, 40
+;logo shadow
 .db typeSprite1bpp
 .dw 248
 .db 200
 .db 1
+.dl logoSprite 
+.db 7, 14
+;logo
+.db typeSprite1bpp
+.dw 247
+.db 199
+.db 4
 .dl logoSprite 
 .db 7, 14
 ;version string
@@ -83,12 +92,6 @@ titleCompound:
 .dl versionString
 .db 0, 0
 
-;uiCompoundObj
-;.db typeCompound
-;.dw 0, 0
-;.dl uiCompound
-;.db 4, 0
-
 ;Game items info
 itemsInfo:
 .db 12 ;number of items
@@ -96,7 +99,7 @@ itemsInfo:
 .db typeCompound
 .dw 0, 0
 .dl uiCompound
-.db 4, 0
+.db 6, 0
 fieldInfo:
 .db typeMap
 .dw 0 ;x
@@ -301,8 +304,6 @@ gameText:
 
 nextText:
  .db "NEXT",0
-holdText:
- .db "HOLD",0
 
 SSSInfo = itemsInfo
 
@@ -312,7 +313,7 @@ menuObjData:
  .db typeCompound
  .dw 0, 0
  .dl titleCompound
- .db 3, 0
+ .db 4, 0
  ;background
  .db typeBox
  .dw 0 ;x
@@ -661,7 +662,7 @@ optionsMenuData:
  .dw 0 ;x
  .db 0 ;y
  .db 18 ;color
- .dl 80 ;width
+ .dl 88 ;width
  .db 19, 64 ;bordercolor, height
 ;heading
  .db typeString
@@ -947,6 +948,7 @@ controlMenuText:
  .db "HARD DROP",0
  .db "LEFT ROTATE",0
  .db "RIGHT ROTATE",0
+holdText:
  .db "HOLD",0
  .db "PAUSE",0
  .db 0
@@ -1032,7 +1034,7 @@ setDASDelay:
 
 setLockDelay:
  ld ix, lockDelayNum
- ld a, 61
+ ld a,31
  call jptSetNumber
  jp controlMenu
 
@@ -1122,9 +1124,9 @@ pauseData:
  .db typeBox
  .dw 32
  .db 108
- .db boxColor
+ .db lightBoxColor
  .dl 56
- .db boxColor2, 24
+ .db lightBoxColor2, 24
 ;menu text
  .db typeMenu
  .dw 36
@@ -1144,9 +1146,9 @@ gameOverData:
  .db typeBox
  .dw 32
  .db 108
- .db boxColor
+ .db lightBoxColor
  .dl 56
- .db boxColor2, 24
+ .db lightBoxColor2, 24
 ;menu text
  .db typeMenu
  .dw 44
