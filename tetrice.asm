@@ -158,7 +158,7 @@ initGame:
  res rbitGameWon, (ix+rfBasic) ;game not won
  
  xor a
- ld (lines),a
+ sbc hl,hl
  ld (linesToNextLevel),a
  ld (clearTimer),a
  ld (spawnTimer),a
@@ -171,9 +171,8 @@ initGame:
  ld (buttonLeft+buttonTimeStart),a
  ld (buttonRight+buttonTimeStart),a
   
- or a,a
- sbc hl,hl
  ld (score),hl ;don't keep old score/time!
+ ld (lines),hl 
  bit rbitCountdown, (ix+rfWin)
  jr nz, noResetTimer
  ld (globaltimer),hl

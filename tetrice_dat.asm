@@ -67,7 +67,7 @@ titleCompound:
 .db 192
 .db 2
 .dl 72
-.db 3, 38
+.db 3, 40
 ;logo
 .db typeSprite1bpp
 .dw 248
@@ -307,7 +307,7 @@ holdText:
 SSSInfo = itemsInfo
 
 menuObjData:
- .db 4
+ .db 6
 ;titleCompound
  .db typeCompound
  .dw 0, 0
@@ -334,9 +334,28 @@ menuObjData:
  .db textColor
  .dl cursorString
  .db 0, 0
+ ;about/info box
+ .db typeBox
+ .dw 8 ;x
+ .db 192 ;y
+ .db 2 ;color
+ .dl 224 ;width
+ .db 3, 40 ;bordercolor, height
+;about/info 
+ .db typeMenu
+ .dw 16
+ .db 200
+ .db textColor
+ .dl aboutText
+ .db 3, 0
 
 cursorString:
  .db "*",0
+
+aboutText:
+ .db "More info:",0
+ .db " cemete.ch/t16162",0
+ .db " github.com/Minxrod/CETris",0
  
 menuText:
  .db "START",0

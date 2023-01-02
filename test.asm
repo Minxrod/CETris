@@ -152,7 +152,7 @@ testSpd:
  .dw 0
  .db 0
  .db 1
- .dl waitCounter
+ .dl testNum; waitCounter
  .db 8, 4
 
 testText:

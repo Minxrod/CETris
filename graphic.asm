@@ -5,7 +5,7 @@ initLCD:
  
 ;intialize palette from data
 smcPaletteDataPtr=$+1
- ld hl, 0
+ ld hl, $000000
  ld de, $e30200
  ld bc, 512 ;undefined colors likely never used
  ldir
@@ -60,18 +60,18 @@ waitLCDRIS:
  ld hl, mpLcdIcr
  set bLcdIntLNBU, (hl)
  ld l, mpLcdRis & $FF
- ld de,0
- ld (waitCounter),de
+; ld de,0
+; ld (waitCounter),de
 wr:
- ld de,(waitCounter)
- inc de
- ld (waitCounter),de
+; ld de,(waitCounter)
+; inc de
+; ld (waitCounter),de
  bit bLcdIntLNBU, (hl)
  jr z, wr
  ret
 
-waitCounter:
- .dl 0
+;waitCounter:
+; .dl 0
 
 ;input:
 ;a = color
@@ -88,7 +88,7 @@ clearSprite:
  push bc
  push de
  ld h,0
- ld d,0 ;save HL = Y
+ ld d,h ;save HL = Y
  ld e,l
  add hl,hl ;2y
  add hl,hl ;4y
@@ -255,31 +255,31 @@ skipRow8h:
 ;a=pal
 ;hl=data ptr
 ;de=vram ptr
-;speed: ??cc/px 
+;speed: 17cc/px (34cc/2px)
 putPixel4bpp:
- ld c,a ;save palette ofs
- ld a,(hl) ;get data
- and $F0
- rrca
- rrca
- rrca
- rr a ;can set z flag
- jr z, noPut1stPixel
- add a,c ;add palette ofs to color
- ld (de),a ;load first nibble + palette ofs
-noPut1stPixel:
- inc de ;next coord
- 
- ld a,(hl) ;data again
- and $0F ;can set z flag
- jr z,noPut2ndPixel
- add a,c ;add palette and color
- ld (de),a
-noPut2ndPixel:
- inc hl ;next data chunk
- inc de ;next vram index
- ld a,c
- jp putPixelReturn
+ ld c,a ;save palette ofs			;1
+ ld a,(hl) ;get data				;2
+ and $F0					;2
+ rrca						;1
+ rrca						;1
+ rrca						;1
+ rrca						;1
+ jr z, noPut1stPixel				;3
+ add a,c ;add palette ofs to color		;1
+ ld (de),a ;load first nibble + palette ofs	;2
+noPut1stPixel:					;
+ inc de ;next coord				;1
+ 						;
+ ld a,(hl) ;data again				;2
+ and $0F ;can set z flag			;2
+ jr z,noPut2ndPixel				;3
+ add a,c ;add palette and color			;1
+ ld (de),a					;2
+noPut2ndPixel:					;
+ inc hl ;next data chunk			;1
+ inc de ;next vram index			;1
+ ld a,c						;1
+ jp putPixelReturn				;5
 
 ;a=pal
 ;hl=data ptr
@@ -423,22 +423,27 @@ skipRow2h:
 ;a=palette ofs
 ;hl=data ptr
 ;de=vram ptr
-;speed: ~13cc/px (106cc/8px)
+;speed: ~13cc/px (102cc/8px)
 putPixel1bpp: 
- ld c,(hl)					;2
+ ld c,a						;1
+ ld a,(hl)					;2
+ ex de,hl					;1
  ld b,8						;2
  ;new:
- ;c=bit data
+ ;a=bit data
  ;b=pixel count
+ ;c=palette
 putPixelBit:					
- rlc c ;get bit from c				;2*8
+ rlca ;get bit from a				;1*8
  ;if bit is zero, pixel is transparent.		;
  jr nc, noPutPixelBit ;skip to inc location	;3*8
- ld (de),a ;save to location			;2*8
+ ld (hl),c ;save to location			;2*8
 noPutPixelBit:
- inc de ;next					;1*8
+ inc hl ;next					;1*8
  djnz putPixelBit				;4*8
- inc hl ;done with this byte of data		;1
+ inc de ;done with this byte of data		;1
+ ex de,hl					;1
+ ld a,c						;1
  jp putPixelReturn				;5
  
 put1bppHalfScale:
@@ -977,7 +982,7 @@ menuScanMenu:
  jr nz,menuScanMenu
  ld de,-iDataSize
  add ix,de ;ix - iDataSize ;z set => c reset
- ;ix points to a typeMenu object
+ ;ix points to first typeMenu object
  ld (menuPTR),ix
  
  ld b,(ix+iDataW) ;# text items
