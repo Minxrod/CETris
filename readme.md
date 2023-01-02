@@ -41,7 +41,11 @@ These can be changed from within the Options/Controls menu.
 # Building 
 You will need convbin and spasm-ng (see Tools section) placed in the tools/ directory. If you are on Windows and want to build, try using MinGW, the build script only works on Linux or similar.
 
-Run `./build.sh` to build both the data file and the program file, as well as the test file. By default, this does not build with the Cesium header. Just add any argument, for example `./build.sh 1` to build with the Cesium header (this is the version with an icon)
+Run `./build.sh` to build everything. Both the data file and the program file, as well as the graphics testing file are built here.
+
+The default build setup uses the current time as the version indicator. To build with a specific version number, specify the first arugment: `./build.sh v0.8`
+
+Just add any second argument, for example `./build.sh v0.8 1` to build with the Cesium header (this is the version with an icon, which adds about 300 bytes but looks nicer in shells). Note that the verison number in the header is currently separate from the in-program displayed version; make sure to modify tetrice.asm if building this way and you want matching versions.
 
 # Useful Resources 
 ## Tools
